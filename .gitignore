@@ -5,7 +5,7 @@
 *.env
 
 # Database
-*.db
+#*.db
 *.db-shm
 *.db-wal
 

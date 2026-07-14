@@ -106,6 +106,31 @@ def create_tables(conn: sqlite3.Connection) -> None:
             ON mls_market_data(zip_code, fetched_at)
     """)
 
+    # ── Pre-Mover Leads (USA Home Listings) ──────────────────────
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS pre_mover_leads (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            address       TEXT,
+            city          TEXT,
+            state         TEXT,
+            zip_code      TEXT,
+            status        TEXT,
+            list_price    REAL,
+            bedrooms      INTEGER,
+            bathrooms     REAL,
+            sqft          INTEGER,
+            is_vacant     INTEGER DEFAULT 0,
+            listed_date   TEXT,
+            source_id     TEXT,
+            scraped_at    TEXT DEFAULT (datetime('now')),
+            UNIQUE(source_id, scraped_at)
+        )
+    """)
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_leads_zip_date
+            ON pre_mover_leads(zip_code, scraped_at)
+    """)
+
     # ── Email Log ────────────────────────────────────────────────
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS email_log (
