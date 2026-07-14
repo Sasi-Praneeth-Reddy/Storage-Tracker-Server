@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  dashboard:
+    build: .
+    container_name: storage_dashboard
+    command: streamlit run dashboard/app.py --server.address=0.0.0.0
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./database:/app/database
+      - ./.env:/app/.env
+    restart: unless-stopped
+    environment:
+      - TZ=America/New_York
+
+  scheduler:
+    build: .
+    container_name: storage_scheduler
+    command: python scheduler/daily_job.py
+    volumes:
+      - ./database:/app/database
+      - ./.env:/app/.env
+    restart: unless-stopped
+    environment:
+      - TZ=America/New_York

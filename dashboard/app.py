@@ -1,0 +1,347 @@
+import streamlit as st
+import pandas as pd
+import sqlite3
+import plotly.express as px
+import folium
+from streamlit_folium import st_folium
+import pathlib
+import sys
+
+# Add parent directory to path so we can import config
+BASE_DIR = pathlib.Path(__file__).parent.parent
+sys.path.insert(0, str(BASE_DIR))
+import config
+
+# Set page config for a premium, wide layout
+st.set_page_config(
+    page_title="Market Tracking Dashboard",
+    page_icon="🏢",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Custom CSS for premium look
+st.markdown("""
+<style>
+    .main { background-color: #0e1117; }
+    .kpi-card {
+        background-color: #1e2129;
+        border-radius: 10px;
+        padding: 20px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+        text-align: center;
+        border-top: 4px solid #4CAF50;
+    }
+    .kpi-title {
+        color: #8b92a5;
+        font-size: 14px;
+        text-transform: uppercase;
+        font-weight: 600;
+        margin-bottom: 5px;
+    }
+    .kpi-value {
+        color: #ffffff;
+        font-size: 32px;
+        font-weight: 700;
+    }
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 24px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        background-color: #1e2129;
+        border-radius: 4px 4px 0px 0px;
+        gap: 1px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        padding-left: 20px;
+        padding-right: 20px;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #2196F3 !important;
+        color: white !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+@st.cache_data(ttl=60)
+def load_real_estate_data():
+    conn = sqlite3.connect(config.DB_PATH)
+    query = """
+        SELECT address, city, state, county, zip_code, status, 
+               previous_status, status_updated_at,
+               list_price, bedrooms, bathrooms, sqft, is_vacant, 
+               latitude, longitude, scraped_at
+        FROM pre_mover_leads
+    """
+    df = pd.read_sql_query(query, conn)
+    conn.close()
+    df['list_price'] = pd.to_numeric(df['list_price'], errors='coerce')
+    df['sqft'] = pd.to_numeric(df['sqft'], errors='coerce')
+    return df
+
+@st.cache_data(ttl=60)
+def load_storage_data():
+    conn = sqlite3.connect(config.DB_PATH)
+    # Join facilities with latest pricing
+    query = """
+        SELECT f.id, f.name, f.brand, f.address, f.city, f.state, f.zip_code, 
+               f.lat as latitude, f.lon as longitude, f.google_rating, 
+               p.unit_size, p.web_rate, p.availability, p.scraped_at
+        FROM facilities f
+        LEFT JOIN (
+            SELECT facility_id, unit_size, web_rate, availability, scraped_at,
+                   ROW_NUMBER() OVER(PARTITION BY facility_id, unit_size ORDER BY scraped_at DESC) as rn
+            FROM pricing_snapshots
+        ) p ON f.id = p.facility_id AND p.rn = 1
+    """
+    df = pd.read_sql_query(query, conn)
+    conn.close()
+    return df
+
+with st.spinner("Loading market data..."):
+    df_re_raw = load_real_estate_data()
+    df_st_raw = load_storage_data()
+
+# Create navigation for the dashboard
+page = st.sidebar.radio("Navigation", ["🏡 Real Estate Market", "📦 Self-Storage Market"])
+
+# =====================================================================
+# PAGE 1: REAL ESTATE MARKET
+# =====================================================================
+if page == "🏡 Real Estate Market":
+    st.sidebar.write("---")
+    st.sidebar.header("🏡 Real Estate Filters")
+    # Status filter
+    statuses = df_re_raw['status'].dropna().unique().tolist()
+    selected_statuses = st.sidebar.multiselect("Listing Status", options=statuses, default=statuses)
+
+    # State filter
+    states = sorted(df_re_raw['state'].dropna().unique().tolist())
+    selected_states = st.sidebar.multiselect("States", options=states, default=states)
+
+    # County filter
+    counties = sorted(df_re_raw['county'].dropna().unique().tolist())
+    selected_counties = st.sidebar.multiselect("Counties", options=counties, default=counties)
+
+    # Price filter
+    min_price = float(df_re_raw['list_price'].min()) if not df_re_raw['list_price'].empty else 0.0
+    max_price = float(df_re_raw['list_price'].max()) if not df_re_raw['list_price'].empty else 5000000.0
+    price_range = st.sidebar.slider("Price Range ($)", min_value=min_price, max_value=max_price, value=(min_price, max_price))
+
+    df_re = df_re_raw[
+        (df_re_raw['status'].isin(selected_statuses)) &
+        (df_re_raw['list_price'] >= price_range[0]) &
+        (df_re_raw['list_price'] <= price_range[1])
+    ]
+    if selected_states:
+        df_re = df_re[df_re['state'].isin(selected_states)]
+    if selected_counties:
+        df_re = df_re[df_re['county'].isin(selected_counties)]
+
+    st.title("Regional MLS Market")
+    
+    col1, col2, col3, col4, col5 = st.columns(5)
+    with col1:
+        st.markdown(f'<div class="kpi-card"><div class="kpi-title">Total Listings</div><div class="kpi-value">{len(df_re):,}</div></div>', unsafe_allow_html=True)
+    with col2:
+        st.markdown(f'<div class="kpi-card" style="border-top-color: #2196F3;"><div class="kpi-title">Active (For Sale)</div><div class="kpi-value">{len(df_re[df_re["status"] == "for_sale"]):,}</div></div>', unsafe_allow_html=True)
+    with col3:
+        st.markdown(f'<div class="kpi-card" style="border-top-color: #FF9800;"><div class="kpi-title">Under Contract</div><div class="kpi-value">{len(df_re[df_re["status"] == "under_contract"]):,}</div></div>', unsafe_allow_html=True)
+    with col4:
+        avg_price = df_re['list_price'].mean()
+        avg_price_str = f"${avg_price:,.0f}" if pd.notnull(avg_price) else "N/A"
+        st.markdown(f'<div class="kpi-card" style="border-top-color: #9C27B0;"><div class="kpi-title">Avg List Price</div><div class="kpi-value">{avg_price_str}</div></div>', unsafe_allow_html=True)
+    with col5:
+        status_changed = len(df_re[df_re['previous_status'].notna()])
+        st.markdown(f'<div class="kpi-card" style="border-top-color: #F44336;"><div class="kpi-title">Status Changed</div><div class="kpi-value">{status_changed:,}</div></div>', unsafe_allow_html=True)
+
+    st.write("---")
+    
+    col_map, col_chart = st.columns([2, 1])
+    with col_map:
+        st.subheader("📍 Property Map")
+        df_map = df_re.dropna(subset=['latitude', 'longitude'])
+        if not df_map.empty:
+            center_lat, center_lon = df_map['latitude'].mean(), df_map['longitude'].mean()
+            m = folium.Map(location=[center_lat, center_lon], zoom_start=9, tiles="CartoDB dark_matter")
+            if len(df_map) > 1000:
+                df_map = df_map.sample(1000)
+                st.caption(f"Displaying random sample of 1,000 out of {len(df_re)} properties.")
+            for idx, row in df_map.iterrows():
+                color = "green" if row['status'] == 'for_sale' else "orange" if row['status'] == 'under_contract' else "gray"
+                price_str = f"${row['list_price']:,.0f}" if pd.notnull(row['list_price']) else "N/A"
+                popup = f"<b>{row['address']}</b><br>Price: {price_str}<br>Status: {row['status']}"
+                folium.CircleMarker([row['latitude'], row['longitude']], radius=4, popup=folium.Popup(popup, max_width=250), color=color, fill=True, fill_opacity=0.7).add_to(m)
+            st_folium(m, width=800, height=500, returned_objects=[])
+        else:
+            st.info("No properties to map.")
+            
+    with col_chart:
+        st.subheader("📊 Market Breakdown")
+        if not df_re.empty:
+            county_counts = df_re['county'].value_counts().reset_index()
+            county_counts.columns = ['County', 'Count']
+            fig1 = px.bar(county_counts.head(10), x='Count', y='County', orientation='h', color='Count', template="plotly_dark")
+            fig1.update_layout(yaxis={'categoryorder':'total ascending'}, showlegend=False, margin=dict(l=0, r=0, t=0, b=0), height=240)
+            st.plotly_chart(fig1, use_container_width=True)
+            
+            status_counts = df_re['status'].value_counts().reset_index()
+            status_counts.columns = ['Status', 'Count']
+            fig2 = px.pie(status_counts, values='Count', names='Status', hole=0.4, template="plotly_dark", color_discrete_sequence=px.colors.qualitative.Set2)
+            fig2.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=240)
+            fig2.update_layout(margin=dict(l=0, r=0, t=0, b=0), height=240)
+            st.plotly_chart(fig2, use_container_width=True)
+
+    st.write("---")
+
+    # ── Daily Houses Added Line Chart ─────────────────────────────
+    st.subheader("📈 Total Houses Added (Weekly)")
+    if not df_re.empty and 'scraped_at' in df_re.columns:
+        # Group by week to show chunks (~4 points per month)
+        df_re['date_added'] = pd.to_datetime(df_re['scraped_at']).dt.to_period('W').dt.start_time.dt.date
+        daily_counts = df_re.groupby('date_added').size().reset_index(name='Total Added')
+        
+        fig_line = px.line(
+            daily_counts, x='date_added', y='Total Added', 
+            markers=True, template="plotly_dark"
+        )
+        fig_line.update_layout(
+            xaxis_title="Date",
+            yaxis_title="Houses Added",
+            margin=dict(l=0, r=0, t=10, b=0),
+            height=300
+        )
+        fig_line.update_traces(line_color="#4CAF50")
+        st.plotly_chart(fig_line, use_container_width=True)
+
+    st.write("---")
+
+    # ── Recently Changed Listings ─────────────────────────────────
+    st.subheader("🔄 Recently Changed Listings")
+    df_changed = df_re[df_re['previous_status'].notna()].copy()
+    if not df_changed.empty:
+        df_changed['transition'] = df_changed['previous_status'] + ' → ' + df_changed['status']
+        
+        col_trans_chart, col_trans_table = st.columns([1, 2])
+        with col_trans_chart:
+            trans_counts = df_changed['transition'].value_counts().reset_index()
+            trans_counts.columns = ['Transition', 'Count']
+            fig_trans = px.bar(
+                trans_counts, x='Count', y='Transition', orientation='h',
+                color='Count', color_continuous_scale='Reds', template='plotly_dark',
+                title='Status Transitions'
+            )
+            fig_trans.update_layout(
+                yaxis={'categoryorder': 'total ascending'},
+                showlegend=False,
+                margin=dict(l=0, r=0, t=30, b=0),
+                height=300
+            )
+            st.plotly_chart(fig_trans, use_container_width=True)
+        
+        with col_trans_table:
+            display_changed = df_changed[[
+                'address', 'city', 'county', 'zip_code',
+                'previous_status', 'status', 'list_price', 'status_updated_at'
+            ]].rename(columns={
+                'previous_status': 'Old Status',
+                'status': 'New Status',
+                'list_price': 'Price',
+                'status_updated_at': 'Changed On'
+            })
+            st.dataframe(display_changed, use_container_width=True, height=300)
+    else:
+        st.info("No status changes detected yet. Run the exporter again to track transitions.")
+
+    st.write("---")
+
+    st.subheader("📋 Raw Data Explorer")
+    st.dataframe(df_re[['address', 'city', 'county', 'zip_code', 'status', 'previous_status', 'list_price', 'bedrooms', 'bathrooms', 'sqft', 'is_vacant']], use_container_width=True)
+
+
+# =====================================================================
+# PAGE 2: SELF-STORAGE MARKET
+# =====================================================================
+elif page == "📦 Self-Storage Market":
+    st.sidebar.write("---")
+    st.sidebar.header("📦 Storage Filters")
+    
+    brands = sorted(df_st_raw['brand'].dropna().unique().tolist())
+    selected_brands = st.sidebar.multiselect("Storage Brands", options=brands, default=brands)
+    
+    unit_sizes = sorted(df_st_raw['unit_size'].dropna().unique().tolist())
+    if not unit_sizes:
+        unit_sizes = ["10x10"]
+    selected_size = st.sidebar.selectbox("Unit Size to Compare", options=unit_sizes)
+
+    # Filter storage data
+    df_st = df_st_raw[df_st_raw['brand'].isin(selected_brands) if selected_brands else [True]*len(df_st_raw)]
+    
+    st.title("Self-Storage Market Tracker")
+    
+    # Calculate KPIs
+    # Unique facilities
+    total_facilities = df_st['id'].nunique()
+    
+    # Avg price for selected unit size
+    df_pricing = df_st[df_st['unit_size'] == selected_size]
+    avg_unit_price = df_pricing['web_rate'].mean()
+    
+    # Top brand by facility count
+    if not df_st.empty:
+        top_brand = df_st[['id', 'brand']].drop_duplicates()['brand'].mode()[0]
+    else:
+        top_brand = "N/A"
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown(f'<div class="kpi-card" style="border-top-color: #E91E63;"><div class="kpi-title">Tracked Facilities</div><div class="kpi-value">{total_facilities:,}</div></div>', unsafe_allow_html=True)
+    with col2:
+        avg_str = f"${avg_unit_price:.2f}" if pd.notnull(avg_unit_price) else "N/A"
+        st.markdown(f'<div class="kpi-card" style="border-top-color: #00BCD4;"><div class="kpi-title">Avg {selected_size} Rate</div><div class="kpi-value">{avg_str}</div></div>', unsafe_allow_html=True)
+    with col3:
+        st.markdown(f'<div class="kpi-card" style="border-top-color: #FFC107;"><div class="kpi-title">Dominant Brand</div><div class="kpi-value">{top_brand}</div></div>', unsafe_allow_html=True)
+        
+    st.write("---")
+    
+    col_map2, col_chart2 = st.columns([2, 1])
+    with col_map2:
+        st.subheader("📍 Facilities Map")
+        # For map, just use one row per facility
+        df_facilities = df_st.drop_duplicates(subset=['id']).dropna(subset=['latitude', 'longitude'])
+        if not df_facilities.empty:
+            center_lat, center_lon = df_facilities['latitude'].mean(), df_facilities['longitude'].mean()
+            m2 = folium.Map(location=[center_lat, center_lon], zoom_start=9, tiles="CartoDB dark_matter")
+            
+            for idx, row in df_facilities.iterrows():
+                # Color code by brand (Public Storage = orange, Extra Space = green, CubeSmart = red, Independent = gray)
+                color = "gray"
+                if "Public Storage" in row['brand']: color = "orange"
+                elif "Extra Space" in row['brand']: color = "green"
+                elif "CubeSmart" in row['brand']: color = "red"
+                elif "U-Haul" in row['brand']: color = "purple"
+                
+                # Try to find price for this facility
+                fac_pricing = df_pricing[df_pricing['id'] == row['id']]
+                price_str = f"${fac_pricing.iloc[0]['web_rate']:.0f}" if not fac_pricing.empty and pd.notnull(fac_pricing.iloc[0]['web_rate']) else "N/A"
+                
+                popup = f"<b>{row['name']}</b><br>{row['brand']}<br>{selected_size} Price: {price_str}<br>Rating: {row['google_rating']}"
+                folium.CircleMarker([row['latitude'], row['longitude']], radius=5, popup=folium.Popup(popup, max_width=250), color=color, fill=True, fill_opacity=0.8).add_to(m2)
+            st_folium(m2, width=800, height=500, returned_objects=[], key="storage_map")
+        else:
+            st.info("No storage facilities mapped yet.")
+            
+    with col_chart2:
+        st.subheader("📈 Pricing by Brand")
+        if not df_pricing.empty:
+            brand_prices = df_pricing.groupby('brand')['web_rate'].mean().reset_index()
+            fig3 = px.bar(brand_prices.sort_values('web_rate', ascending=False), x='brand', y='web_rate', color='brand', template="plotly_dark", title=f"Average {selected_size} Price")
+            fig3.update_layout(showlegend=False, margin=dict(l=0, r=0, t=30, b=0), height=450)
+            st.plotly_chart(fig3, use_container_width=True)
+        else:
+            st.info(f"No pricing data available for {selected_size} units.")
+
+    st.subheader("📋 Storage Data Explorer")
+    st.dataframe(df_st[['name', 'brand', 'city', 'zip_code', 'google_rating', 'unit_size', 'web_rate', 'availability', 'scraped_at']], use_container_width=True)

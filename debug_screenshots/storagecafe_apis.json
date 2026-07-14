@@ -1,0 +1,44 @@
+[
+  {
+    "url": "https://cdn.cookielaw.org/consent/af766fdf-7392-4c3c-81c4-dde2cfcc86c7/af766fdf-7392-4c3c-81c4-dde2cfcc86c7.json",
+    "status": 200,
+    "length": 5438,
+    "preview": "{\"CookieSPAEnabled\":false,\"CookieSameSiteNoneEnabled\":false,\"CookieV2CSPEnabled\":false,\"MultiVariantTestingEnabled\":false,\"UseV2\":true,\"MobileSDK\":false,\"SkipGeolocation\":false,\"ScriptType\":\"PRODUCTIO"
+  },
+  {
+    "url": "https://geolocation.onetrust.com/cookieconsentpub/v1/geo/location",
+    "status": 200,
+    "length": 69,
+    "preview": "{\"country\":\"US\",\"state\":\"VA\",\"stateName\":\"Virginia\",\"continent\":\"NA\"}"
+  },
+  {
+    "url": "https://www.storagecafe.com/LocationWidgetStorage/GetNearMeContent",
+    "status": 200,
+    "length": 37487,
+    "preview": "{\"success\":true,\"DefaultCities\":false,\"CurrentCity\":{\"Name\":\"Ashburn, VA\",\"SeoUrl\":\"https://www.storagecafe.com/self-storage/us/va/ashburn/?geopicker_type=radius&geopicker_output=-77.48749%2c39.04372%"
+  },
+  {
+    "url": "https://cdn.cookielaw.org/consent/af766fdf-7392-4c3c-81c4-dde2cfcc86c7/019dfebd-1fb6-7efe-99d3-33f8103a97b1/en.json",
+    "status": 200,
+    "length": 78379,
+    "preview": "{\"DomainData\":{\"pclifeSpanYr\":\"Year\",\"pclifeSpanYrs\":\"Years\",\"pclifeSpanSecs\":\"A few seconds\",\"pclifeSpanWk\":\"Week\",\"pclifeSpanWks\":\"Weeks\",\"pccontinueWithoutAcceptText\":\"Continue without Accepting\",\""
+  },
+  {
+    "url": "https://cdn.cookielaw.org/scripttemplates/202604.1.0/assets/otCookieSettingsButton.json",
+    "status": 200,
+    "length": 5785,
+    "preview": "\n            {\n                \"name\": \"otCookieSettingsButton\",\n                \"html\": \"PGRpdiBpZD0ib3Qtc2RrLWJ0bi1mbG9hdGluZyIgY2xhc3M9Im90LWZsb2F0aW5nLWJ1dHRvbiBvdC1oaWRlIj48ZGl2IGNsYXNzPSJvdC1mbG"
+  },
+  {
+    "url": "https://cdn.cookielaw.org/scripttemplates/202604.1.0/assets/v2/otPcPanel.json",
+    "status": 200,
+    "length": 70672,
+    "preview": "\n        {\n            \"name\": \"otPcPanel\",\n            \"html\": \"PGRpdiBpZD0ib25ldHJ1c3QtcGMtc2RrIiBjbGFzcz0ib3RQY1BhbmVsIG90LWhpZGUgb3QtZmFkZS1pbiI+PGRpdiByb2xlPSJkaWFsb2ciIGFyaWEtbW9kYWw9InRydWUiPjw"
+  },
+  {
+    "url": "https://cdn.cookielaw.org/scripttemplates/202604.1.0/assets/otFlat.json",
+    "status": 200,
+    "length": 15298,
+    "preview": "\n            {\n                \"name\": \"otFlat\",\n                \"html\": \"PGRpdiBpZD0ib25ldHJ1c3QtYmFubmVyLXNkayIgY2xhc3M9Im90RmxhdCI+PGRpdiByb2xlPSJkaWFsb2ciPjxkaXYgY2xhc3M9Im90LXNkay1jb250YWluZXIiPj"
+  }
+]

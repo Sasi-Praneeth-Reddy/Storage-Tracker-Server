@@ -1,0 +1,28 @@
+# Self-Storage Market Tracker — Dependencies
+# Compatible with Python 3.10+ including Python 3.14
+# Install with: venv\Scripts\pip install --prefer-binary -r requirements.txt
+
+# --- Web Scraping ---
+requests>=2.32.0
+beautifulsoup4>=4.12.0
+lxml>=5.3.0
+playwright>=1.45.0          # For JS-heavy sites (Public Storage, Extra Space)
+
+# --- Dashboard ---
+streamlit>=1.35.0
+plotly>=5.20.0
+folium>=0.17.0
+streamlit-folium>=0.20.0
+pandas>=2.2.0               # Use --prefer-binary to avoid compile from source
+
+# --- Email ---
+brevo-python>=1.0.0         # Brevo (formerly Sendinblue) SDK
+jinja2>=3.1.0               # HTML email templates
+
+# --- Scheduling ---
+apscheduler>=3.10.0         # Python job scheduler
+
+# --- Utilities ---
+python-dotenv>=1.0.0        # Load .env file
+python-dateutil>=2.9.0
+tabulate>=0.9.0             # Pretty-print tables in logs
