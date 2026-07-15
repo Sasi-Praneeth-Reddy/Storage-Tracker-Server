@@ -26,6 +26,7 @@ Usage:
 
 import sys
 import csv
+import re
 import pathlib
 import logging
 import argparse
@@ -332,13 +333,18 @@ def import_csv(filepath: pathlib.Path) -> tuple[int, int]:
                     skipped += 1
                     continue
 
+                scraped_at_val = None
+                date_matches = re.findall(r'\d{4}-\d{2}-\d{2}', filepath.name)
+                if date_matches:
+                    scraped_at_val = f"{date_matches[-1]} 12:00:00"
+
                 batch.append((
                     lead["address"], lead["city"], lead["state"],
                     lead["county"], lead["zip_code"], lead["status"],
                     lead["list_price"], lead["bedrooms"], lead["bathrooms"],
                     lead["sqft"], lead["is_vacant"], lead["listed_date"],
                     lead["source_id"], lead["import_file"], lead["latitude"],
-                    lead["longitude"],
+                    lead["longitude"], scraped_at_val,
                 ))
 
                 # Write in batches of 500
@@ -374,8 +380,8 @@ def _write_batch(conn: sqlite3.Connection, batch: list) -> int:
                 INSERT INTO pre_mover_leads
                     (address, city, state, county, zip_code, status,
                      list_price, bedrooms, bathrooms, sqft, is_vacant,
-                     listed_date, source_id, import_file, latitude, longitude)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                     listed_date, source_id, import_file, latitude, longitude, scraped_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, COALESCE(?, datetime('now')))
                 ON CONFLICT(address, zip_code) DO UPDATE SET
                     previous_status   = CASE
                         WHEN excluded.status != pre_mover_leads.status
