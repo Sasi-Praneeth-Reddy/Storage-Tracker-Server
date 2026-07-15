@@ -372,32 +372,63 @@ async def scrape_listings(page) -> list:
     """Navigate to the listings page and extract all property cards."""
     log.info("Starting scrape_listings...")
     leads = []
-    
+
     # Ensure we are actually on the listings page
     success = await navigate_to_listings(page)
     if not success:
         log.warning("Could not reach listings page. Returning empty list.")
         return leads
 
-    # Wait for listing cards to appear (USA Home Listings uses typical card classes)
+    # ── Step 1: The listings page loads data inside a hidden iframe ──
+    # We must switch into the iframe's content frame to access the data.
+    content_frame = None
     try:
-        await page.wait_for_selector('.listing-card, .property-card, [class*="card"], table tr', timeout=15000)
+        await page.wait_for_selector("iframe", timeout=15000)
+        iframe_el = await page.query_selector("iframe")
+        if iframe_el:
+            content_frame = await iframe_el.content_frame()
+            if content_frame:
+                log.info("Switched into iframe: %s", content_frame.url)
+                # Wait for the iframe's internal page to fully load
+                await content_frame.wait_for_load_state("networkidle", timeout=30000)
+                await take_debug_screenshot(page, "inside_iframe")
+    except Exception as exc:
+        log.warning("Could not switch into iframe: %s", exc)
+
+    # Use the iframe frame if we found one, otherwise fall back to main page
+    target = content_frame if content_frame else page
+
+    # ── Step 2: Search for listing data inside the (iframe) page ──
+    selectors = [
+        'table tr',
+        '.listing-card', '.property-card',
+        '[class*="card"]', '[class*="listing"]',
+        '[class*="property"]', '[class*="lead"]',
+        '.row', '.item',
+    ]
+    selector_str = ", ".join(selectors)
+
+    try:
+        await target.wait_for_selector(selector_str, timeout=20000)
     except Exception:
-        log.warning("No listing cards found on page.")
-        html = await page.inner_html("body")
-        log.warning("HTML DUMP (first 2000 chars): %s", html[:2000])
-        await take_debug_screenshot(page, "no_cards_found")
+        log.warning("No listing elements found inside iframe either.")
+        try:
+            html = await target.inner_html("body")
+            log.warning("IFRAME HTML DUMP (first 3000 chars): %s", html[:3000])
+        except Exception:
+            log.warning("Could not dump iframe HTML.")
+        await take_debug_screenshot(page, "no_cards_in_iframe")
         return leads
 
-    # Extract all cards or table rows
-    cards = await page.query_selector_all('.listing-card, .property-card, [class*="card"], table tr')
-    log.info("Found %d potential listing items on the page.", len(cards))
-    
+    # Extract all matching elements
+    cards = await target.query_selector_all(selector_str)
+    log.info("Found %d potential listing items.", len(cards))
+
     for card in cards:
         lead = await parse_listing_card(card)
         if lead and lead.get("address"):
             leads.append(lead)
-            
+
     return leads
 
 
