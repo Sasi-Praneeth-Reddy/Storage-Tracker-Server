@@ -64,7 +64,7 @@ def main():
     parser = argparse.ArgumentParser(description="Self-Storage & Real Estate Tracker Scheduler")
     parser.add_argument("--run-now", action="store_true", help="Run both jobs immediately (once)")
     parser.add_argument("--hour", type=int, default=11, help="Hour to run (24h, default: 11)")
-    parser.add_argument("--minute", type=int, default=5, help="Minute to run (default: 5)")
+    parser.add_argument("--minute", type=int, default=45, help="Minute to run (default: 45)")
     args = parser.parse_args()
 
     if args.run_now:
@@ -80,12 +80,14 @@ def main():
     scheduler.add_job(daily_real_estate_job, re_trigger, id="daily_re_job", name="Daily Real Estate Tracker")
 
     # Self Storage runs every 3 days (e.g., 1st, 4th, 7th...)
-    st_trigger = CronTrigger(day="*/3", hour=args.hour, minute=args.minute+30, timezone="America/New_York")
+    st_minute = (args.minute + 30) % 60
+    st_hour = (args.hour + 1) if (args.minute + 30) >= 60 else args.hour
+    st_trigger = CronTrigger(day="*/3", hour=st_hour, minute=st_minute, timezone="America/New_York")
     scheduler.add_job(tri_daily_storage_job, st_trigger, id="tri_daily_st_job", name="Every 3 Days Storage Tracker")
 
     log.info("Scheduler started.")
     log.info("Real Estate: Every day at %02d:%02d AM", args.hour, args.minute)
-    log.info("Self Storage: Every 3 days at %02d:%02d AM", args.hour, args.minute+30)
+    log.info("Self Storage: Every 3 days at %02d:%02d", st_hour, st_minute)
     log.info("Press Ctrl+C to stop.")
 
     try:
