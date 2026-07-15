@@ -208,15 +208,17 @@ async def parse_listing_card(card) -> dict:
         # Address -- try common selectors
         for sel in ['.address', '[class*=address]', 'h3', 'h4', '.street']:
             try:
-                text = await card.inner_text(sel, timeout=1000)
-                if text.strip():
-                    lead["address"] = text.strip()
-                    break
+                el = await card.query_selector(sel)
+                if el:
+                    text = await el.inner_text()
+                    if text.strip():
+                        lead["address"] = text.strip()
+                        break
             except Exception:
                 pass
 
         # ZIP code -- extract from address or dedicated field
-        text_content = await card.inner_text(timeout=2000)
+        text_content = await card.inner_text()
         zip_match = re.search(r'\b(\d{5})\b', text_content)
         if zip_match:
             lead["zip_code"] = zip_match.group(1)
@@ -383,8 +385,9 @@ async def scrape_listings(page) -> list:
     # We must switch into the iframe's content frame to access the data.
     content_frame = None
     try:
-        await page.wait_for_selector("iframe", timeout=15000)
-        iframe_el = await page.query_selector("iframe")
+        # The iframe has hidden="" so we must use state='attached' not 'visible'
+        await page.wait_for_selector("iframe[src*='portal']", state="attached", timeout=15000)
+        iframe_el = await page.query_selector("iframe[src*='portal']")
         if iframe_el:
             content_frame = await iframe_el.content_frame()
             if content_frame:
