@@ -130,6 +130,10 @@ def create_tables(conn: sqlite3.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_leads_zip_date
             ON pre_mover_leads(zip_code, scraped_at)
     """)
+    cursor.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_address_zip
+            ON pre_mover_leads(address, zip_code)
+    """)
 
     # ── Email Log ────────────────────────────────────────────────
     cursor.execute("""

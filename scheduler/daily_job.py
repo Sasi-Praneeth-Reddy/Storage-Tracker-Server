@@ -63,8 +63,8 @@ def tri_daily_storage_job():
 def main():
     parser = argparse.ArgumentParser(description="Self-Storage & Real Estate Tracker Scheduler")
     parser.add_argument("--run-now", action="store_true", help="Run both jobs immediately (once)")
-    parser.add_argument("--hour", type=int, default=7, help="Hour to run (24h, default: 7)")
-    parser.add_argument("--minute", type=int, default=0, help="Minute to run (default: 0)")
+    parser.add_argument("--hour", type=int, default=11, help="Hour to run (24h, default: 11)")
+    parser.add_argument("--minute", type=int, default=5, help="Minute to run (default: 5)")
     args = parser.parse_args()
 
     if args.run_now:

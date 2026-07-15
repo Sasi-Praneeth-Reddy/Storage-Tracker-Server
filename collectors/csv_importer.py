@@ -211,6 +211,10 @@ def ensure_leads_table():
         CREATE INDEX IF NOT EXISTS idx_leads_state
             ON pre_mover_leads(state)
     """)
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_leads_address_zip
+            ON pre_mover_leads(address, zip_code)
+    """)
     conn.commit()
     conn.close()
 

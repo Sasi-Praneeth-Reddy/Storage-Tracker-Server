@@ -72,7 +72,7 @@ def _execute_collectors(collectors: list, dry_run: bool) -> list:
 
 def run_real_estate(dry_run: bool = False):
     log.info("=== Starting Real Estate Daily Collection ===")
-    from collectors.usahomelistings_scraper import run as mls_run
+    from collectors.portal_exporter import run as mls_run
     
     collectors = [
         ("USA Home Listings (Pre-Mover Leads)", mls_run),

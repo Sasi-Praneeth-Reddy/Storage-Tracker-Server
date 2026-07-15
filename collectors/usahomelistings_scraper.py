@@ -13,11 +13,14 @@ Run: venv\\Scripts\\python collectors/usahomelistings_scraper.py
 
 import asyncio
 import logging
+import os
 import re
 import sys
 import time
 import pathlib
 from datetime import datetime
+
+import pandas as pd
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 
@@ -48,23 +51,36 @@ def ensure_leads_table():
     conn = get_connection()
     conn.execute("""
         CREATE TABLE IF NOT EXISTS pre_mover_leads (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            address       TEXT,
-            city          TEXT,
-            state         TEXT,
-            zip_code      TEXT,
-            status        TEXT,    -- 'for_sale', 'under_contract', 'pending'
-            list_price    REAL,
-            bedrooms      INTEGER,
-            bathrooms     REAL,
-            sqft          INTEGER,
-            is_vacant     INTEGER DEFAULT 0,  -- Vacancy AI flag
-            listed_date   TEXT,
-            source_id     TEXT,   -- portal's internal ID
-            scraped_at    TEXT DEFAULT (datetime('now')),
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            address           TEXT,
+            city              TEXT,
+            state             TEXT,
+            county            TEXT,
+            zip_code          TEXT,
+            status            TEXT,
+            previous_status   TEXT,
+            status_updated_at TEXT,
+            list_price        REAL,
+            bedrooms          INTEGER,
+            bathrooms         REAL,
+            sqft              INTEGER,
+            is_vacant         INTEGER DEFAULT 0,
+            latitude          REAL,
+            longitude         REAL,
+            listed_date       TEXT,
+            source_id         TEXT,
+            scraped_at        TEXT DEFAULT (datetime('now')),
             UNIQUE(source_id, scraped_at)
         )
     """)
+    # Add columns if upgrading from an older schema
+    for col, coltype in [('county', 'TEXT'), ('previous_status', 'TEXT'),
+                          ('status_updated_at', 'TEXT'), ('latitude', 'REAL'),
+                          ('longitude', 'REAL')]:
+        try:
+            conn.execute(f"ALTER TABLE pre_mover_leads ADD COLUMN {col} {coltype}")
+        except Exception:
+            pass  # column already exists
     conn.execute("""
         CREATE INDEX IF NOT EXISTS idx_leads_zip_date
             ON pre_mover_leads(zip_code, scraped_at)
@@ -87,13 +103,13 @@ def save_lead(lead: dict) -> bool:
             return False   # already have this lead today
         cur.execute("""
             INSERT OR IGNORE INTO pre_mover_leads
-                (address, city, state, zip_code, status,
+                (address, city, state, county, zip_code, status,
                  list_price, bedrooms, bathrooms, sqft,
-                 is_vacant, listed_date, source_id)
+                 is_vacant, latitude, longitude, listed_date, source_id)
             VALUES
-                (:address, :city, :state, :zip_code, :status,
+                (:address, :city, :state, :county, :zip_code, :status,
                  :list_price, :bedrooms, :bathrooms, :sqft,
-                 :is_vacant, :listed_date, :source_id)
+                 :is_vacant, :latitude, :longitude, :listed_date, :source_id)
         """, lead)
         conn.commit()
         return cur.rowcount > 0
@@ -370,67 +386,215 @@ async def navigate_to_listings(page) -> bool:
     return False
 
 
-async def scrape_listings(page) -> list:
-    """Navigate to the listings page and extract all property cards."""
-    log.info("Starting scrape_listings...")
-    leads = []
+def map_export_row(row, columns) -> dict:
+    """Map a row from the exported Excel/CSV to our lead dict format."""
+    # Build a lowercase lookup: normalized_name -> original_column_name
+    col_map = {c.strip().lower().replace(' ', '_'): c for c in columns}
 
-    # Ensure we are actually on the listings page
-    success = await navigate_to_listings(page)
-    if not success:
-        log.warning("Could not reach listings page. Returning empty list.")
-        return leads
+    def get(possible_names, default=None):
+        for name in possible_names:
+            if name in col_map:
+                val = row.get(col_map[name])
+                if pd.notnull(val):
+                    return val
+        return default
 
-    # ── Step 1: The listings page loads data inside a hidden iframe ──
-    # We must switch into the iframe's content frame to access the data.
-    content_frame = None
-    try:
-        # The iframe has hidden="" so we must use state='attached' not 'visible'
-        await page.wait_for_selector("iframe[src*='portal']", state="attached", timeout=15000)
-        iframe_el = await page.query_selector("iframe[src*='portal']")
-        if iframe_el:
-            content_frame = await iframe_el.content_frame()
-            if content_frame:
-                log.info("Switched into iframe: %s", content_frame.url)
-                # Wait for the iframe's internal page to fully load
-                await content_frame.wait_for_load_state("networkidle", timeout=30000)
-                await take_debug_screenshot(page, "inside_iframe")
-    except Exception as exc:
-        log.warning("Could not switch into iframe: %s", exc)
+    address = get(['address', 'street_address', 'street', 'property_address'], '')
+    city = get(['city'], '')
+    state = get(['state', 'st'], '')
+    county = get(['county'], '')
+    zip_code = get(['zip', 'zip_code', 'zipcode', 'postal_code'], '')
+    status_raw = get(['status', 'listing_status', 'listing_type'], 'for_sale')
+    price = get(['price', 'list_price', 'listing_price', 'asking_price'], None)
+    beds = get(['bedrooms', 'beds', 'bed', 'br'], None)
+    baths = get(['bathrooms', 'baths', 'bath', 'ba'], None)
+    sqft_val = get(['sqft', 'sq_ft', 'square_feet', 'living_area', 'square_footage'], None)
+    lat = get(['latitude', 'lat'], None)
+    lon = get(['longitude', 'lon', 'lng'], None)
 
-    # Use the iframe frame if we found one, otherwise fall back to main page
-    target = content_frame if content_frame else page
+    # Normalise status text
+    status = 'for_sale'
+    if status_raw:
+        sl = str(status_raw).lower()
+        if 'pending' in sl or 'under contract' in sl or 'contract' in sl:
+            status = 'under_contract'
+        elif 'coming soon' in sl or 'coming_soon' in sl:
+            status = 'coming_soon'
 
-    # ── Step 2: Search for listing data inside the (iframe) page ──
-    selectors = [
-        'table tr',
-        '.listing-card', '.property-card',
-        '[class*="card"]', '[class*="listing"]',
-        '[class*="property"]', '[class*="lead"]',
-        '.row', '.item',
-    ]
-    selector_str = ", ".join(selectors)
-
-    try:
-        await target.wait_for_selector(selector_str, timeout=20000)
-    except Exception:
-        log.warning("No listing elements found inside iframe either.")
+    # Clean price if it's a string like "$495,000"
+    if isinstance(price, str):
+        price = price.replace('$', '').replace(',', '').strip()
         try:
-            html = await target.inner_html("body")
-            log.warning("IFRAME HTML DUMP (first 3000 chars): %s", html[:3000])
-        except Exception:
-            log.warning("Could not dump iframe HTML.")
-        await take_debug_screenshot(page, "no_cards_in_iframe")
-        return leads
+            price = float(price)
+        except ValueError:
+            price = None
 
-    # Extract all matching elements
-    cards = await target.query_selector_all(selector_str)
-    log.info("Found %d potential listing items.", len(cards))
+    lead = {
+        "address":    str(address).strip() if address else "",
+        "city":       str(city).strip() if city else "",
+        "state":      str(state).strip() if state else "",
+        "county":     str(county).strip() if county else "",
+        "zip_code":   str(zip_code).strip().split('.')[0] if zip_code else "",
+        "status":     status,
+        "list_price": float(price) if price is not None else None,
+        "bedrooms":   int(beds) if beds is not None and pd.notnull(beds) else None,
+        "bathrooms":  float(baths) if baths is not None and pd.notnull(baths) else None,
+        "sqft":       int(float(sqft_val)) if sqft_val is not None and pd.notnull(sqft_val) else None,
+        "is_vacant":  0,
+        "latitude":   float(lat) if lat is not None and pd.notnull(lat) else None,
+        "longitude":  float(lon) if lon is not None and pd.notnull(lon) else None,
+        "listed_date": None,
+        "source_id":  str(address).strip() if address else "",
+    }
+    return lead
 
-    for card in cards:
-        lead = await parse_listing_card(card)
+def _parse_export_file(filepath: str) -> list:
+    """Read a CSV or Excel export file and return a list of lead dicts."""
+    leads = []
+    if filepath.lower().endswith('.csv'):
+        df = pd.read_csv(filepath, encoding='utf-8-sig')
+    else:
+        df = pd.read_excel(filepath)
+
+    log.info("Export file has %d rows. Columns: %s", len(df), list(df.columns))
+
+    for _, row in df.iterrows():
+        lead = map_export_row(row, df.columns)
         if lead and lead.get("address"):
             leads.append(lead)
+    return leads
+
+
+async def scrape_listings(page) -> list:
+    """
+    Click 'Export to see Detailed Report', download the Excel/CSV,
+    parse every row into a lead dict, then delete the file.
+    """
+    log.info("Starting scrape_listings (Export approach)...")
+    leads = []
+
+    # Navigate to listings page
+    success = await navigate_to_listings(page)
+    if not success:
+        log.warning("Could not reach listings page.")
+        return leads
+
+    # Wait for the page to fully render (heavy JS)
+    await page.wait_for_load_state("networkidle", timeout=30000)
+    await page.wait_for_timeout(5000)
+
+    # ── Find the Export button across ALL frames ──
+    export_btn = None
+    target_frame = page
+    for frame in page.frames:
+        for btn_text in ["Export to see Detailed Report", "Export"]:
+            try:
+                btn = await frame.query_selector('text="{}"'.format(btn_text))
+                if btn:
+                    export_btn = btn
+                    target_frame = frame
+                    log.info("Found '%s' button in frame: %s", btn_text, frame.url)
+                    break
+            except Exception:
+                continue
+        if export_btn:
+            break
+
+    if not export_btn:
+        log.warning("Could not find Export button on any frame.")
+        await take_debug_screenshot(page, "no_export_button")
+        # Debug: dump each frame
+        for i, frame in enumerate(page.frames):
+            try:
+                html = await frame.inner_html("body")
+                log.warning("Frame %d (%s) HTML (first 1500): %s", i, frame.url, html[:1500])
+            except Exception:
+                pass
+        return leads
+
+    # ── Click Export and monitor for download or new page ──
+    log.info("Clicking Export button to download report...")
+    download_dir = pathlib.Path("downloads")
+    download_dir.mkdir(exist_ok=True)
+
+    # Set up event listeners for BOTH downloads and new pages
+    download_result = []
+    new_page_result = []
+    context = page.context
+
+    page.on("download", lambda d: download_result.append(d))
+    context.on("page", lambda p: new_page_result.append(p))
+
+    # Click the Export button
+    await export_btn.click()
+    log.info("Export clicked. Monitoring for download or new page (up to 5 min)...")
+
+    # Poll every 5 seconds for up to 5 minutes
+    for check in range(60):
+        await page.wait_for_timeout(5000)
+
+        # ── Check 1: Did a file download start? ──
+        if download_result:
+            download = download_result[0]
+            log.info("Download detected: %s", download.suggested_filename)
+            filename = download.suggested_filename or "export.csv"
+            save_path = download_dir / filename
+            await download.save_as(str(save_path))
+            log.info("Saved to: %s", save_path)
+            leads = _parse_export_file(str(save_path))
+            os.remove(str(save_path))
+            log.info("Parsed %d leads from download. Deleted temp file.", len(leads))
+            return leads
+
+        # ── Check 2: Did a new browser tab open? ──
+        if new_page_result:
+            new_page = new_page_result[0]
+            try:
+                await new_page.wait_for_load_state("networkidle", timeout=60000)
+            except Exception:
+                pass
+            log.info("New page opened: %s", new_page.url)
+            await take_debug_screenshot(new_page, "export_new_page")
+
+            # The new page might itself trigger a download
+            try:
+                async with new_page.expect_download(timeout=60000) as dl_info:
+                    pass  # download may already be in progress
+                dl = await dl_info.value
+                filename = dl.suggested_filename or "export.csv"
+                save_path = download_dir / filename
+                await dl.save_as(str(save_path))
+                leads = _parse_export_file(str(save_path))
+                os.remove(str(save_path))
+                log.info("Parsed %d leads from new-page download.", len(leads))
+                return leads
+            except Exception:
+                pass
+
+            # Or the page content itself might be the CSV
+            try:
+                url = new_page.url
+                if "download" in url or "export" in url or url.endswith(".csv"):
+                    import urllib.request
+                    tmp_path = str(download_dir / "export_from_url.csv")
+                    urllib.request.urlretrieve(url, tmp_path)
+                    leads = _parse_export_file(tmp_path)
+                    os.remove(tmp_path)
+                    log.info("Parsed %d leads from new-page URL.", len(leads))
+                    return leads
+            except Exception:
+                pass
+            break
+
+        # Log progress every 30 seconds
+        if check > 0 and check % 6 == 0:
+            elapsed = (check + 1) * 5
+            log.info("Still waiting for export... (%ds elapsed)", elapsed)
+            await take_debug_screenshot(page, "export_waiting_{}s".format(elapsed))
+
+    if not download_result and not new_page_result:
+        log.warning("Export timed out — no download or new page detected.")
+        await take_debug_screenshot(page, "export_final_timeout")
 
     return leads
 
@@ -454,6 +618,7 @@ async def run_async() -> int:
         )
         context = await browser.new_context(
             viewport={"width": 1280, "height": 900},
+            accept_downloads=True,
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "

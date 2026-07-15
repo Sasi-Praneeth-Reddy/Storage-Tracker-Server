@@ -523,7 +523,7 @@ async def run_async(args) -> int:
 def run(args=None):
     if args is None:
         args = argparse.Namespace(
-            state=None, county=False, by_state=False, import_only=False
+            state=None, county=False, by_state=True, import_only=False
         )
 
     if not args.import_only:
