@@ -381,15 +381,17 @@ async def scrape_listings(page) -> list:
 
     # Wait for listing cards to appear (USA Home Listings uses typical card classes)
     try:
-        await page.wait_for_selector('.listing-card, .property-card, [class*="card"]', timeout=15000)
+        await page.wait_for_selector('.listing-card, .property-card, [class*="card"], table tr', timeout=15000)
     except Exception:
         log.warning("No listing cards found on page.")
+        html = await page.inner_html("body")
+        log.warning("HTML DUMP (first 2000 chars): %s", html[:2000])
         await take_debug_screenshot(page, "no_cards_found")
         return leads
 
-    # Extract all cards
-    cards = await page.query_selector_all('.listing-card, .property-card, [class*="card"]')
-    log.info("Found %d listing cards on the page.", len(cards))
+    # Extract all cards or table rows
+    cards = await page.query_selector_all('.listing-card, .property-card, [class*="card"], table tr')
+    log.info("Found %d potential listing items on the page.", len(cards))
     
     for card in cards:
         lead = await parse_listing_card(card)
