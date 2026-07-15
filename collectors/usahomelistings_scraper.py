@@ -368,6 +368,36 @@ async def navigate_to_listings(page) -> bool:
     return False
 
 
+async def scrape_listings(page) -> list:
+    """Navigate to the listings page and extract all property cards."""
+    log.info("Starting scrape_listings...")
+    leads = []
+    
+    # Ensure we are actually on the listings page
+    success = await navigate_to_listings(page)
+    if not success:
+        log.warning("Could not reach listings page. Returning empty list.")
+        return leads
+
+    # Wait for listing cards to appear (USA Home Listings uses typical card classes)
+    try:
+        await page.wait_for_selector('.listing-card, .property-card, [class*="card"]', timeout=15000)
+    except Exception:
+        log.warning("No listing cards found on page.")
+        await take_debug_screenshot(page, "no_cards_found")
+        return leads
+
+    # Extract all cards
+    cards = await page.query_selector_all('.listing-card, .property-card, [class*="card"]')
+    log.info("Found %d listing cards on the page.", len(cards))
+    
+    for card in cards:
+        lead = await parse_listing_card(card)
+        if lead and lead.get("address"):
+            leads.append(lead)
+            
+    return leads
+
 
 async def run_async() -> int:
     """Main async entry point. Returns number of records written."""
