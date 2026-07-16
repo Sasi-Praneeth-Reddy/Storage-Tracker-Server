@@ -363,6 +363,43 @@ async def export_by_state_chunked(page, frame, context, state_name: str) -> int:
             log.info("    No listings in this chunk, skipping.")
             continue
             
+        if count > 2000:
+            log.info("    Chunk too large (>2000 listings). Splitting into daily chunks...")
+            days_diff = (end_date - start_date).days
+            for d in range(days_diff + 1):
+                single_date = start_date + timedelta(days=d)
+                single_str = single_date.strftime("%Y-%m-%d")
+                single_save_path = IMPORT_DIR / safe_state / "{}_{}.csv".format(safe_state, single_str)
+                if single_save_path.exists() and single_save_path.stat().st_size > 0:
+                    continue
+                
+                script_single = f"""() => {{
+                    if (typeof app !== 'undefined' && app.selectedDates) {{
+                        app.selectedDates.start = '{single_str} 00:00';
+                        app.selectedDates.end = '{single_str} 23:59:59';
+                        app.search();
+                    }}
+                }}"""
+                await frame.evaluate(script_single)
+                await frame.wait_for_timeout(1000)
+                
+                sub_count = await click_update_results(frame)
+                if sub_count == 0:
+                    continue
+                
+                log.info("      %s (%s): %d listings", state_name, single_str, sub_count)
+                
+                # Double check even daily chunk isn't somehow magically 10,000, 
+                # but daily is the lowest granularity we can realistically do cleanly.
+                ok = await do_export(page, frame, context, single_save_path, timeout_ms=120000)
+                if ok:
+                    exported += 1
+                    log.info("      Saved: %s", single_save_path.name)
+                else:
+                    log.warning("      Export failed for daily chunk %s", single_str)
+                await asyncio.sleep(2)
+            continue
+            
         ok = await do_export(page, frame, context, save_path, timeout_ms=120000)
         if ok:
             exported += 1
