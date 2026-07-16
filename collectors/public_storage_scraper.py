@@ -32,7 +32,7 @@ def clean_size(size_str: str) -> str:
     clean = size_str.replace("'", "").replace('"', '').replace(" ", "").lower()
     return clean
 
-def scrape_public_storage():
+def run():
     """Fetch all Public Storage locations from DB and scrape their prices."""
     conn = get_connection()
     cur = conn.cursor()
@@ -133,4 +133,4 @@ def scrape_public_storage():
     log.info(f"Public Storage scrape complete! Scraped {facilities_scraped} facilities, {units_found} units.")
 
 if __name__ == '__main__':
-    scrape_public_storage()
+    run()
