@@ -41,7 +41,8 @@ logging.basicConfig(
 PORTAL_URL   = "https://get.usahomelistings.com"
 LOGIN_URL    = PORTAL_URL + "/login"
 LISTINGS_URL = PORTAL_URL + "/portal/page/listings_data"
-IMPORT_DIR   = pathlib.Path(__file__).parent.parent / "data" / "imports"
+import tempfile
+IMPORT_DIR   = pathlib.Path(tempfile.gettempdir()) / "self_storage_imports"
 DEBUG_DIR    = pathlib.Path(__file__).parent.parent / "debug_screenshots"
 
 TARGET_STATES = ["Virginia", "Maryland", "West Virginia"]
@@ -459,6 +460,7 @@ async def export_by_county(page, frame, context, state_name: str) -> int:
 async def run_async(args) -> int:
     from playwright.async_api import async_playwright
 
+    import tempfile
     IMPORT_DIR.mkdir(parents=True, exist_ok=True)
     DEBUG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -468,7 +470,6 @@ async def run_async(args) -> int:
         browser = await pw.chromium.launch(
             headless=True,
             args=["--no-sandbox", "--disable-dev-shm-usage"],
-            downloads_path=str(IMPORT_DIR),
         )
         context = await browser.new_context(
             viewport={"width": 1440, "height": 900},

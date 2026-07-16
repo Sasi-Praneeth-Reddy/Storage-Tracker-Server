@@ -45,7 +45,8 @@ logging.basicConfig(
 
 # Where to look for CSVs automatically
 DOWNLOADS_DIR = pathlib.Path.home() / "Downloads"
-PROJECT_DATA_DIR = pathlib.Path(__file__).parent.parent / "data" / "imports"
+import tempfile
+PROJECT_DATA_DIR = pathlib.Path(tempfile.gettempdir()) / "self_storage_imports"
 
 # Where to write exported filtered CSVs
 EXPORT_DIR = pathlib.Path(__file__).parent.parent / "data" / "exports"
@@ -139,6 +140,32 @@ COLUMN_MAP = {
     "longitude":          "longitude",
     "lng":                "longitude",
     "lon":                "longitude",
+
+    "first_name":         "first_name",
+    "first name":         "first_name",
+    "last_name":          "last_name",
+    "last name":          "last_name",
+    "owner_full_name":    "owner_full_name",
+    "owner full name":    "owner_full_name",
+    "email":              "email",
+    "email 2":            "email_2",
+    "phone":              "phone",
+    "phone type":         "phone_type",
+    "phone 2":            "phone_2",
+    "phone 2 type":       "phone_2_type",
+    "realtor name":       "realtor_name",
+    "realtor email":      "realtor_email",
+    "realtor phone":      "realtor_phone",
+    "realtor phone 2":    "realtor_phone_2",
+    "realtor phone 3":    "realtor_phone_3",
+    "realtor address":    "realtor_address",
+    "broker name":        "broker_name",
+    "broker email":       "broker_email",
+    "broker phone":       "broker_phone",
+    "broker phone 2":     "broker_phone_2",
+    "broker phone 3":     "broker_phone_3",
+    "broker address":     "broker_address",
+    "square footage":     "sqft",
 }
 
 # Status normalisation
@@ -298,6 +325,27 @@ def parse_row(row: list, header_map: dict) -> dict:
         "source_id":   raw.get("source_id", ""),
         "latitude":    parse_float(raw.get("latitude", "")),
         "longitude":   parse_float(raw.get("longitude", "")),
+        "first_name":  raw.get("first_name", ""),
+        "last_name":   raw.get("last_name", ""),
+        "owner_full_name": raw.get("owner_full_name", ""),
+        "email":       raw.get("email", ""),
+        "email_2":     raw.get("email_2", ""),
+        "phone":       raw.get("phone", ""),
+        "phone_type":  raw.get("phone_type", ""),
+        "phone_2":     raw.get("phone_2", ""),
+        "phone_2_type": raw.get("phone_2_type", ""),
+        "realtor_name": raw.get("realtor_name", ""),
+        "realtor_email": raw.get("realtor_email", ""),
+        "realtor_phone": raw.get("realtor_phone", ""),
+        "realtor_phone_2": raw.get("realtor_phone_2", ""),
+        "realtor_phone_3": raw.get("realtor_phone_3", ""),
+        "realtor_address": raw.get("realtor_address", ""),
+        "broker_name": raw.get("broker_name", ""),
+        "broker_email": raw.get("broker_email", ""),
+        "broker_phone": raw.get("broker_phone", ""),
+        "broker_phone_2": raw.get("broker_phone_2", ""),
+        "broker_phone_3": raw.get("broker_phone_3", ""),
+        "broker_address": raw.get("broker_address", ""),
     }
     return lead
 
@@ -345,6 +393,13 @@ def import_csv(filepath: pathlib.Path) -> tuple[int, int]:
                     lead["sqft"], lead["is_vacant"], lead["listed_date"],
                     lead["source_id"], lead["import_file"], lead["latitude"],
                     lead["longitude"], scraped_at_val,
+                    lead["first_name"], lead["last_name"], lead["owner_full_name"],
+                    lead["email"], lead["email_2"], lead["phone"],
+                    lead["phone_type"], lead["phone_2"], lead["phone_2_type"],
+                    lead["realtor_name"], lead["realtor_email"], lead["realtor_phone"],
+                    lead["realtor_phone_2"], lead["realtor_phone_3"], lead["realtor_address"],
+                    lead["broker_name"], lead["broker_email"], lead["broker_phone"],
+                    lead["broker_phone_2"], lead["broker_phone_3"], lead["broker_address"],
                 ))
 
                 # Write in batches of 500
@@ -380,8 +435,12 @@ def _write_batch(conn: sqlite3.Connection, batch: list) -> int:
                 INSERT INTO pre_mover_leads
                     (address, city, state, county, zip_code, status,
                      list_price, bedrooms, bathrooms, sqft, is_vacant,
-                     listed_date, source_id, import_file, latitude, longitude, scraped_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, COALESCE(?, datetime('now')))
+                     listed_date, source_id, import_file, latitude, longitude, scraped_at,
+                     first_name, last_name, owner_full_name, email, email_2, phone, phone_type, phone_2, phone_2_type,
+                     realtor_name, realtor_email, realtor_phone, realtor_phone_2, realtor_phone_3, realtor_address,
+                     broker_name, broker_email, broker_phone, broker_phone_2, broker_phone_3, broker_address)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, COALESCE(?, datetime('now')),
+                        ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 ON CONFLICT(address, zip_code) DO UPDATE SET
                     previous_status   = CASE
                         WHEN excluded.status != pre_mover_leads.status
@@ -396,7 +455,28 @@ def _write_batch(conn: sqlite3.Connection, batch: list) -> int:
                     status     = excluded.status,
                     list_price = COALESCE(excluded.list_price, pre_mover_leads.list_price),
                     is_vacant  = excluded.is_vacant,
-                    import_file = excluded.import_file
+                    import_file = excluded.import_file,
+                    first_name = COALESCE(excluded.first_name, pre_mover_leads.first_name),
+                    last_name = COALESCE(excluded.last_name, pre_mover_leads.last_name),
+                    owner_full_name = COALESCE(excluded.owner_full_name, pre_mover_leads.owner_full_name),
+                    email = COALESCE(excluded.email, pre_mover_leads.email),
+                    email_2 = COALESCE(excluded.email_2, pre_mover_leads.email_2),
+                    phone = COALESCE(excluded.phone, pre_mover_leads.phone),
+                    phone_type = COALESCE(excluded.phone_type, pre_mover_leads.phone_type),
+                    phone_2 = COALESCE(excluded.phone_2, pre_mover_leads.phone_2),
+                    phone_2_type = COALESCE(excluded.phone_2_type, pre_mover_leads.phone_2_type),
+                    realtor_name = COALESCE(excluded.realtor_name, pre_mover_leads.realtor_name),
+                    realtor_email = COALESCE(excluded.realtor_email, pre_mover_leads.realtor_email),
+                    realtor_phone = COALESCE(excluded.realtor_phone, pre_mover_leads.realtor_phone),
+                    realtor_phone_2 = COALESCE(excluded.realtor_phone_2, pre_mover_leads.realtor_phone_2),
+                    realtor_phone_3 = COALESCE(excluded.realtor_phone_3, pre_mover_leads.realtor_phone_3),
+                    realtor_address = COALESCE(excluded.realtor_address, pre_mover_leads.realtor_address),
+                    broker_name = COALESCE(excluded.broker_name, pre_mover_leads.broker_name),
+                    broker_email = COALESCE(excluded.broker_email, pre_mover_leads.broker_email),
+                    broker_phone = COALESCE(excluded.broker_phone, pre_mover_leads.broker_phone),
+                    broker_phone_2 = COALESCE(excluded.broker_phone_2, pre_mover_leads.broker_phone_2),
+                    broker_phone_3 = COALESCE(excluded.broker_phone_3, pre_mover_leads.broker_phone_3),
+                    broker_address = COALESCE(excluded.broker_address, pre_mover_leads.broker_address)
             """, row)
             if cur.rowcount:
                 written += 1

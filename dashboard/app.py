@@ -105,7 +105,7 @@ with st.spinner("Loading market data..."):
     df_st_raw = load_storage_data()
 
 # Create navigation for the dashboard
-page = st.sidebar.radio("Navigation", ["🏡 Real Estate Market", "📦 Self-Storage Market"])
+page = st.sidebar.radio("Navigation", ["🏡 Real Estate Market", "📦 Self-Storage Market", "🗄️ Database View"])
 
 # =====================================================================
 # PAGE 1: REAL ESTATE MARKET
@@ -345,3 +345,32 @@ elif page == "📦 Self-Storage Market":
 
     st.subheader("📋 Storage Data Explorer")
     st.dataframe(df_st[['name', 'brand', 'city', 'zip_code', 'google_rating', 'unit_size', 'web_rate', 'availability', 'scraped_at']], use_container_width=True)
+
+
+# =====================================================================
+# PAGE 3: DATABASE VIEW
+# =====================================================================
+elif page == "🗄️ Database View":
+    st.sidebar.write("---")
+    st.title("🗄️ Raw Database Explorer")
+    
+    @st.cache_data(ttl=60)
+    def load_full_database():
+        conn = sqlite3.connect(config.DB_PATH)
+        df = pd.read_sql_query("SELECT * FROM pre_mover_leads", conn)
+        conn.close()
+        return df
+
+    with st.spinner("Loading complete database..."):
+        df_full = load_full_database()
+
+    st.write(f"Showing all **{len(df_full):,}** rows and **{len(df_full.columns)}** columns from the `pre_mover_leads` table.")
+    
+    search = st.text_input("Search any column (e.g., zip code, name, status)")
+    if search:
+        # Simple text search across all string columns
+        mask = df_full.apply(lambda row: row.astype(str).str.contains(search, case=False, na=False).any(), axis=1)
+        df_full = df_full[mask]
+        st.write(f"Search results: {len(df_full):,} rows")
+
+    st.dataframe(df_full, use_container_width=True, height=800)
