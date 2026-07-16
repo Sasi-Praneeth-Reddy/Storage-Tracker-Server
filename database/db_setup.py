@@ -146,8 +146,7 @@ def create_tables(conn: sqlite3.Connection) -> None:
             longitude     REAL,
             latitude      REAL,
             source_id     TEXT,
-            scraped_at    TEXT DEFAULT (datetime('now')),
-            UNIQUE(source_id, scraped_at)
+            scraped_at    TEXT DEFAULT (datetime('now'))
         )
     """)
     cursor.execute("""
