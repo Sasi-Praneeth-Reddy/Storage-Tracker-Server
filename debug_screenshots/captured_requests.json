@@ -1,7 +1,0 @@
-[
-  {
-    "url": "https://portal.usahomelistings.com/api/listings/csv/?county=Alexandria%20County&listing_types=for_sale,pending,coming_soon&vacancy_check=true&min_date=2026-05-27%2000:00&max_date=2026-06-25%2023:59&audience=owner",
-    "status": 200,
-    "ct": "text/csv; charset=utf-8"
-  }
-]

@@ -277,7 +277,10 @@ elif page == "📦 Self-Storage Market":
     selected_size = st.sidebar.selectbox("Unit Size to Compare", options=unit_sizes)
 
     # Filter storage data
-    df_st = df_st_raw[df_st_raw['brand'].isin(selected_brands) if selected_brands else [True]*len(df_st_raw)]
+    if selected_brands:
+        df_st = df_st_raw[df_st_raw['brand'].isin(selected_brands)]
+    else:
+        df_st = df_st_raw.copy()
     
     st.title("Self-Storage Market Tracker")
     
