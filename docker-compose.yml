@@ -10,6 +10,9 @@ services:
     volumes:
       - ./database:/app/database
       - ./.env:/app/.env
+      - ./dashboard:/app/dashboard
+      - ./collectors:/app/collectors
+      - ./scheduler:/app/scheduler
     restart: unless-stopped
     environment:
       - TZ=America/New_York
@@ -21,6 +24,9 @@ services:
     volumes:
       - ./database:/app/database
       - ./.env:/app/.env
+      - ./dashboard:/app/dashboard
+      - ./collectors:/app/collectors
+      - ./scheduler:/app/scheduler
     restart: unless-stopped
     environment:
       - TZ=America/New_York

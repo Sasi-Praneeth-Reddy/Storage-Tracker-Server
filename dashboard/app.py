@@ -294,7 +294,7 @@ elif page == "📦 Self-Storage Market":
     
     if status_file.exists():
         st.sidebar.info("🕵️‍♂️ Scraper is running in the background!")
-        st.sidebar.markdown("![Scraping Animation](https://media.giphy.com/media/XIqCQx02E1U9W/giphy.gif)")
+        st.sidebar.markdown("![Scraping Animation](https://media.giphy.com/media/v1.Y2lkPWVjZjA1ZTQ3YnNieHJscGpoNmh1cWZncm1uenAxd3NxYjVwNjB1Y3BrODIyaTluaCZlcD12MV9naWZzX3JlbGF0ZWQmY3Q9Zw/ule4vhcY1xEKQ/giphy.gif)")
         
         col1, col2 = st.sidebar.columns(2)
         with col1:
