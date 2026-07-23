@@ -80,17 +80,21 @@ def run_real_estate(dry_run: bool = False):
     return _execute_collectors(collectors, dry_run)
 
 def run_self_storage(dry_run: bool = False):
-    log.info("=== Starting Self-Storage Collection (Every 3 Days) ===")
-    from collectors.google_maps_collector import run as google_maps_run
-    from collectors.sparefoot_scraper import run as sparefoot_run
-    from collectors.public_storage_scraper import run as ps_run
-    from collectors.extra_space_scraper import run as es_run
+    log.info("=== Starting Self-Storage ETL Collection ===")
+    import asyncio
+    from collectors.fetch import fetch_all
+    from collectors.parse import parse_all
     
+    def run_fetch():
+        asyncio.run(fetch_all())
+        return 0
+        
+    def run_parse():
+        return parse_all()
+
     collectors = [
-        ("Google Maps Discovery", google_maps_run),
-        ("SpareFoot Aggregator", sparefoot_run),
-        ("Public Storage Direct", ps_run),
-        ("Extra Space Direct", es_run),
+        ("StorageCafe ETL Fetch", run_fetch),
+        ("StorageCafe ETL Parse", run_parse),
     ]
     return _execute_collectors(collectors, dry_run)
 
