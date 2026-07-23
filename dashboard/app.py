@@ -125,19 +125,22 @@ if page == "🏡 Real Estate Market":
     # Status filter
     statuses = df_re_raw['status'].dropna().unique().tolist()
     default_statuses = st.session_state.re_statuses if st.session_state.re_statuses is not None else statuses
-    selected_statuses = st.sidebar.multiselect("Listing Status", options=statuses, default=default_statuses)
+    valid_statuses = [s for s in default_statuses if s in statuses]
+    selected_statuses = st.sidebar.multiselect("Listing Status", options=statuses, default=valid_statuses)
     st.session_state.re_statuses = selected_statuses
 
     # State filter
     states = sorted(df_re_raw['state'].dropna().unique().tolist())
     default_states = st.session_state.re_states if st.session_state.re_states is not None else states
-    selected_states = st.sidebar.multiselect("States", options=states, default=default_states)
+    valid_states = [s for s in default_states if s in states]
+    selected_states = st.sidebar.multiselect("States", options=states, default=valid_states)
     st.session_state.re_states = selected_states
 
     # County filter
     counties = sorted(df_re_raw['county'].dropna().unique().tolist())
     default_counties = st.session_state.re_counties if st.session_state.re_counties is not None else counties
-    selected_counties = st.sidebar.multiselect("Counties", options=counties, default=default_counties)
+    valid_counties = [c for c in default_counties if c in counties]
+    selected_counties = st.sidebar.multiselect("Counties", options=counties, default=valid_counties)
     st.session_state.re_counties = selected_counties
 
     # Price filter
@@ -311,7 +314,8 @@ elif page == "📦 Self-Storage Market":
     
     brands = sorted(df_st_raw['brand'].dropna().unique().tolist())
     default_brands = st.session_state.st_brands if st.session_state.st_brands is not None else brands
-    selected_brands = st.sidebar.multiselect("Storage Brands", options=brands, default=default_brands)
+    valid_brands = [b for b in default_brands if b in brands]
+    selected_brands = st.sidebar.multiselect("Storage Brands", options=brands, default=valid_brands)
     st.session_state.st_brands = selected_brands
     
     unit_sizes = sorted(df_st_raw['unit_size'].dropna().unique().tolist())
