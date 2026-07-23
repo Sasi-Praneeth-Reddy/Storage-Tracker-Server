@@ -79,15 +79,8 @@ def main():
     re_trigger = CronTrigger(hour=args.hour, minute=args.minute, timezone="America/New_York")
     scheduler.add_job(daily_real_estate_job, re_trigger, id="daily_re_job", name="Daily Real Estate Tracker")
 
-    # Self Storage runs every 3 days (e.g., 1st, 4th, 7th...)
-    st_minute = (args.minute + 30) % 60
-    st_hour = (args.hour + 1) if (args.minute + 30) >= 60 else args.hour
-    st_trigger = CronTrigger(day="*/3", hour=st_hour, minute=st_minute, timezone="America/New_York")
-    scheduler.add_job(tri_daily_storage_job, st_trigger, id="tri_daily_st_job", name="Every 3 Days Storage Tracker")
-
     log.info("Scheduler started.")
     log.info("Real Estate: Every day at %02d:%02d AM", args.hour, args.minute)
-    log.info("Self Storage: Every 3 days at %02d:%02d", st_hour, st_minute)
     log.info("Press Ctrl+C to stop.")
 
     try:

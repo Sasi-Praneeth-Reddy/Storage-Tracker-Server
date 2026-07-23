@@ -3,11 +3,12 @@ import asyncio
 from datetime import date
 from pathlib import Path
 from curl_cffi.requests import AsyncSession
+from bs4 import BeautifulSoup
+from config import STORAGE_ZIP_CODES, SCRAPE_DELAY_SECONDS, USER_AGENT
 import pgeocode
 import sys
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config import ALL_ZIP_CODES
 
 RAW_DIR = Path(__file__).parent.parent / "data" / "raw"
 nomi = pgeocode.Nominatim('us')
@@ -54,7 +55,7 @@ async def fetch_all():
     sem = asyncio.Semaphore(5)
     
     async with AsyncSession() as session:
-        tasks = [fetch_zip(z, session, sem, today_str) for z in ALL_ZIP_CODES]
+        tasks = [fetch_zip(z, session, sem, today_str) for z in STORAGE_ZIP_CODES]
         await asyncio.gather(*tasks)
 
 if __name__ == "__main__":

@@ -31,7 +31,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent.parent))
 
 from config import (
     GOOGLE_MAPS_API_KEY,
-    ALL_ZIP_CODES,
+    STORAGE_ZIP_CODES,
     TARGET_BRANDS as STORAGE_BRANDS,   # config exposes it as TARGET_BRANDS
     SCRAPE_DELAY_SECONDS,
 )
@@ -398,7 +398,7 @@ def run() -> int:
 
     start       = time.time()
     total_new   = 0
-    total_zips  = len(ALL_ZIP_CODES)
+    total_zips  = len(STORAGE_ZIP_CODES)
 
     log.info("=" * 60)
     log.info("Google Maps collector starting.")
@@ -406,7 +406,7 @@ def run() -> int:
     log.info("Delay between ZIPs  : %ss", SCRAPE_DELAY_SECONDS)
     log.info("=" * 60)
 
-    for idx, zip_code in enumerate(ALL_ZIP_CODES, start=1):
+    for idx, zip_code in enumerate(STORAGE_ZIP_CODES, start=1):
         log.info("-- [%d/%d] ZIP %s", idx, total_zips, zip_code)
         try:
             new_count  = collect_for_zip(zip_code)

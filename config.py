@@ -154,6 +154,9 @@ ALL_ZIP_CODES = (
 )
 ALL_ZIP_CODES = sorted(set(ALL_ZIP_CODES))  # deduplicate
 
+# Storage specific ZIP codes (Northern Virginia only)
+STORAGE_ZIP_CODES = sorted(set([z for zips in NOVA_ZIP_CODES.values() for z in zips]))
+
 # Geographic center for map initialization (Tysons Corner area)
 MAP_CENTER_LAT = 38.9072
 MAP_CENTER_LON = -77.0369

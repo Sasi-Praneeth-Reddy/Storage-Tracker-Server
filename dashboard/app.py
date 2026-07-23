@@ -268,6 +268,19 @@ elif page == "📦 Self-Storage Market":
     st.sidebar.write("---")
     st.sidebar.header("📦 Storage Filters")
     
+    st.sidebar.write("---")
+    if st.sidebar.button("🚀 Run Storage Scraper Now", use_container_width=True):
+        st.sidebar.info("Starting scraper in the background... check console for logs.")
+        import threading
+        def bg_run():
+            try:
+                from collectors.run_all import run_self_storage
+                run_self_storage(dry_run=False)
+            except Exception as e:
+                print("Error running scraper:", e)
+        threading.Thread(target=bg_run, daemon=True).start()
+    st.sidebar.write("---")
+    
     brands = sorted(df_st_raw['brand'].dropna().unique().tolist())
     selected_brands = st.sidebar.multiselect("Storage Brands", options=brands, default=brands)
     
@@ -316,7 +329,7 @@ elif page == "📦 Self-Storage Market":
         df_facilities = df_st.drop_duplicates(subset=['id']).dropna(subset=['latitude', 'longitude'])
         if not df_facilities.empty:
             center_lat, center_lon = df_facilities['latitude'].mean(), df_facilities['longitude'].mean()
-            m2 = folium.Map(location=[center_lat, center_lon], zoom_start=9, tiles="CartoDB dark_matter")
+            m2 = folium.Map(location=[center_lat, center_lon], zoom_start=9, tiles="OpenStreetMap")
             
             for idx, row in df_facilities.iterrows():
                 # Color code by brand (Public Storage = orange, Extra Space = green, CubeSmart = red, Independent = gray)
@@ -346,6 +359,38 @@ elif page == "📦 Self-Storage Market":
         else:
             st.info(f"No pricing data available for {selected_size} units.")
 
+    st.write("---")
+    
+    col_hist, col_pie = st.columns(2)
+    with col_hist:
+        st.subheader(f"📊 Price Distribution ({selected_size})")
+        if not df_pricing.empty:
+            fig_hist = px.histogram(
+                df_pricing, x='web_rate', nbins=20, 
+                title=f"Distribution of {selected_size} Rates",
+                template="plotly_dark", color_discrete_sequence=['#00BCD4']
+            )
+            fig_hist.update_layout(xaxis_title="Price ($)", yaxis_title="Number of Facilities", margin=dict(l=0, r=0, t=30, b=0), height=350)
+            st.plotly_chart(fig_hist, use_container_width=True)
+        else:
+            st.info("No pricing data available for histogram.")
+            
+    with col_pie:
+        st.subheader("🥧 Brand Market Share")
+        if not df_facilities.empty:
+            brand_counts = df_facilities['brand'].value_counts().reset_index()
+            brand_counts.columns = ['brand', 'count']
+            fig_pie = px.pie(
+                brand_counts, values='count', names='brand', hole=0.4,
+                title="Facility Ownership by Brand",
+                template="plotly_dark", color_discrete_sequence=px.colors.qualitative.Set3
+            )
+            fig_pie.update_layout(margin=dict(l=0, r=0, t=30, b=0), height=350)
+            st.plotly_chart(fig_pie, use_container_width=True)
+        else:
+            st.info("No facility data available for market share.")
+
+    st.write("---")
     st.subheader("📋 Storage Data Explorer")
     st.dataframe(df_st[['name', 'brand', 'city', 'zip_code', 'unit_size', 'web_rate', 'availability', 'scraped_at']], use_container_width=True)
 
