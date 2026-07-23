@@ -68,8 +68,11 @@ def parse_html(filepath, scrape_date):
             lon = float(zip_data.longitude)
             
         # 1. Upsert Facility
+        # Use address in the ID to prevent overwriting facilities with the same name in the same ZIP
+        clean_name = brand_or_name.replace(' ', '_')
+        clean_addr = address.replace(' ', '_').replace(',', '')
         facility_data = {
-            "google_place_id": f"sc_{zip_out}_{brand_or_name.replace(' ', '_')}",
+            "google_place_id": f"sc_{zip_out}_{clean_name}_{clean_addr}",
             "name": brand_or_name,
             "address": address,
             "city": city,
