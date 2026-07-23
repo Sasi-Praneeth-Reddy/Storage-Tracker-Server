@@ -290,23 +290,49 @@ elif page == "📦 Self-Storage Market":
     
     st.sidebar.write("---")
     status_file = pathlib.Path('.scraper_status')
+    pid_file = pathlib.Path('.scraper_pid')
     
     if status_file.exists():
         st.sidebar.info("🕵️‍♂️ Scraper is running in the background!")
         st.sidebar.markdown("![Scraping Animation](https://media.giphy.com/media/XIqCQx02E1U9W/giphy.gif)")
-        if st.sidebar.button("🔄 Refresh Status", use_container_width=True):
-            st.rerun()
+        
+        col1, col2 = st.sidebar.columns(2)
+        with col1:
+            if st.button("🔄 Refresh", use_container_width=True):
+                st.rerun()
+        with col2:
+            if st.button("🛑 Stop", type="primary", use_container_width=True):
+                if pid_file.exists():
+                    try:
+                        import os
+                        import signal
+                        pid = int(pid_file.read_text())
+                        os.kill(pid, signal.SIGTERM)
+                    except Exception:
+                        pass
+                    pid_file.unlink(missing_ok=True)
+                status_file.unlink(missing_ok=True)
+                st.toast("Scraper stopped forcefully!", icon="🛑")
+                st.rerun()
     else:
         if st.sidebar.button("🚀 Run Storage Scraper Now", use_container_width=True):
             status_file.touch()
             import threading
+            import subprocess
+            import sys
+            
             def bg_run():
                 try:
-                    from collectors.run_all import run_self_storage
-                    run_self_storage(dry_run=False)
+                    process = subprocess.Popen(
+                        [sys.executable, "-c", "from collectors.run_all import run_self_storage; run_self_storage(dry_run=False)"]
+                    )
+                    pid_file.write_text(str(process.pid))
+                    process.wait()
                 finally:
                     if status_file.exists():
                         status_file.unlink()
+                    if pid_file.exists():
+                        pid_file.unlink()
             threading.Thread(target=bg_run, daemon=True).start()
             st.rerun()
             
