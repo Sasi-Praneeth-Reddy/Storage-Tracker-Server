@@ -147,20 +147,19 @@ def parse_all(target_date_str=None):
     print(f"Parsing complete. Total facilities updated: {total_facilities}")
     log_scrape("storagecafe_etl", "success", total_facilities, f"Parsed date {target_date_str}")
 
-    # Archive HTML files
-    archive_dir = RAW_DIR / "archive" / target_date_str
-    archive_dir.mkdir(parents=True, exist_ok=True)
-    
-    for filepath in date_dir.glob("*.html"):
-        shutil.move(str(filepath), str(archive_dir / filepath.name))
-
-    print(f"Parsing complete. Total facilities updated: {total_facilities}")
-    log_scrape("storagecafe_etl", "success", total_facilities, f"Parsed date {target_date_str}")
-    
     # --- NEW CLEANUP STEP ---
     print(f"Cleaning up raw HTML files to save space...")
-    shutil.rmtree(date_dir)
-    print(f"Removed folder: {date_dir}")
+    for filepath in date_dir.glob("*.html"):
+        filepath.unlink(missing_ok=True)
+    
+    import shutil
+    shutil.rmtree(date_dir, ignore_errors=True)
+    
+    archive_dir = RAW_DIR / "archive"
+    if archive_dir.exists():
+        shutil.rmtree(archive_dir, ignore_errors=True)
+        
+    print(f"Cleanup complete.")
     # ------------------------
 
     return total_facilities
