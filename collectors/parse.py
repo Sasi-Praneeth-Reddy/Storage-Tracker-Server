@@ -85,8 +85,12 @@ def parse_html(filepath, scrape_date):
         facilities_found += 1
         
         # 2. Parse Prices
-        # Prices sit outside the 'info' div, up one level in the 'details' div under 'pcum-row'
-        unit_types = card.parent.parent.find_all('div', class_='pcum-row') if card.parent.parent else []
+        # Find the specific outer container for this facility to avoid pulling prices from the whole page
+        facility_container = card.find_parent('li') or card.find_parent(class_=lambda c: c and 'card' in c and 'info' not in c)
+        if not facility_container:
+            facility_container = card.parent
+            
+        unit_types = facility_container.find_all('div', class_='pcum-row') if facility_container else []
         for ut in unit_types:
             size_txt = ut.find('span', class_='pcum-dimensions')
             price_txt = ut.find('span', class_='pcum-price')
