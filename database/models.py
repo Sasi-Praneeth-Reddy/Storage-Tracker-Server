@@ -34,10 +34,10 @@ def upsert_facility(data: dict) -> int:
         cur.execute("""
             INSERT INTO facilities
                 (google_place_id, name, brand, address, city, state, zip_code,
-                 lat, lon, phone, website, google_rating, google_reviews, last_updated)
+                 lat, lon, phone, website, last_updated)
             VALUES
                 (:google_place_id, :name, :brand, :address, :city, :state, :zip_code,
-                 :lat, :lon, :phone, :website, :google_rating, :google_reviews, :last_updated)
+                 :lat, :lon, :phone, :website, :last_updated)
             ON CONFLICT(google_place_id) DO UPDATE SET
                 name            = excluded.name,
                 brand           = excluded.brand,
@@ -49,8 +49,6 @@ def upsert_facility(data: dict) -> int:
                 lon             = excluded.lon,
                 phone           = excluded.phone,
                 website         = excluded.website,
-                google_rating   = excluded.google_rating,
-                google_reviews  = excluded.google_reviews,
                 last_updated    = excluded.last_updated
         """, {**data, "last_updated": now})
         conn.commit()

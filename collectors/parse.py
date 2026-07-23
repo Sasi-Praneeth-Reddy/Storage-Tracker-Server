@@ -57,6 +57,16 @@ def parse_html(filepath, scrape_date):
         if phone_tag:
             phone = phone_tag.text.strip()
             
+        # Get approximate lat/lon based on zip code
+        import pgeocode
+        nomi = pgeocode.Nominatim('us')
+        zip_data = nomi.query_postal_code(zip_out)
+        lat, lon = 0.0, 0.0
+        if str(zip_data.latitude) != 'nan':
+            lat = float(zip_data.latitude)
+        if str(zip_data.longitude) != 'nan':
+            lon = float(zip_data.longitude)
+            
         # 1. Upsert Facility
         facility_data = {
             "google_place_id": f"sc_{zip_out}_{brand_or_name.replace(' ', '_')}",
@@ -68,10 +78,8 @@ def parse_html(filepath, scrape_date):
             "phone": phone,
             "website": "https://www.storagecafe.com",
             "brand": brand,
-            "lat": 0.0,
-            "lon": 0.0,
-            "google_rating": 0.0,
-            "google_reviews": 0
+            "lat": lat,
+            "lon": lon
         }
         facility_id = upsert_facility(facility_data)
         facilities_found += 1

@@ -41,8 +41,6 @@ def create_tables(conn: sqlite3.Connection) -> None:
             lon             REAL,
             phone           TEXT,
             website         TEXT,
-            google_rating   REAL,
-            google_reviews  INTEGER,
             first_seen      TEXT    DEFAULT (datetime('now')),
             last_updated    TEXT    DEFAULT (datetime('now'))
         )
