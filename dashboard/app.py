@@ -87,7 +87,7 @@ def load_storage_data():
     # Join facilities with latest pricing
     query = """
         SELECT f.id, f.name, f.brand, f.address, f.city, f.state, f.zip_code, 
-               f.lat as latitude, f.lon as longitude, f.google_rating, 
+               f.lat as latitude, f.lon as longitude,
                p.unit_size, p.web_rate, p.availability, p.scraped_at
         FROM facilities f
         LEFT JOIN (
@@ -330,7 +330,7 @@ elif page == "📦 Self-Storage Market":
                 fac_pricing = df_pricing[df_pricing['id'] == row['id']]
                 price_str = f"${fac_pricing.iloc[0]['web_rate']:.0f}" if not fac_pricing.empty and pd.notnull(fac_pricing.iloc[0]['web_rate']) else "N/A"
                 
-                popup = f"<b>{row['name']}</b><br>{row['brand']}<br>{selected_size} Price: {price_str}<br>Rating: {row['google_rating']}"
+                popup = f"<b>{row['name']}</b><br>{row['brand']}<br>{selected_size} Price: {price_str}"
                 folium.CircleMarker([row['latitude'], row['longitude']], radius=5, popup=folium.Popup(popup, max_width=250), color=color, fill=True, fill_opacity=0.8).add_to(m2)
             st_folium(m2, width=800, height=500, returned_objects=[], key="storage_map")
         else:
@@ -347,7 +347,7 @@ elif page == "📦 Self-Storage Market":
             st.info(f"No pricing data available for {selected_size} units.")
 
     st.subheader("📋 Storage Data Explorer")
-    st.dataframe(df_st[['name', 'brand', 'city', 'zip_code', 'google_rating', 'unit_size', 'web_rate', 'availability', 'scraped_at']], use_container_width=True)
+    st.dataframe(df_st[['name', 'brand', 'city', 'zip_code', 'unit_size', 'web_rate', 'availability', 'scraped_at']], use_container_width=True)
 
 
 # =====================================================================
