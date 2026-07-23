@@ -587,31 +587,53 @@ async def scrape_zip(page, zip_code: str) -> list:
 # MAIN ASYNC ENTRY POINT
 # ================================================================
 
+import urllib.request
+
+def get_free_proxies() -> list:
+    """Fetches a list of free US HTTP proxies from proxyscrape."""
+    url = "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=5000&country=US&ssl=all&anonymity=all"
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = response.read().decode('utf-8')
+            proxies = [p.strip() for p in data.split('\n') if p.strip()]
+            log.info("Fetched %d free US proxies.", len(proxies))
+            return proxies
+    except Exception as e:
+        log.warning("Failed to fetch proxies: %s", e)
+    return []
+
+
 async def run_async() -> int:
-    """
-    Iterate over up to MAX_ZIPS_PER_RUN ZIP codes, scrape SpareFoot for each,
-    persist results to the database, and return total pricing rows written.
-    """
     from playwright.async_api import async_playwright
 
     zip_codes = ALL_ZIP_CODES[:MAX_ZIPS_PER_RUN]
-    log.info(
-        "SpareFoot scraper starting. Processing %d of %d total ZIPs.",
-        len(zip_codes), len(ALL_ZIP_CODES),
-    )
+    log.info("SpareFoot scraper starting. Processing %d of %d total ZIPs.", len(zip_codes), len(ALL_ZIP_CODES))
 
+    free_proxies = get_free_proxies()
+    proxy_index = 0
     records_written = 0
-    start_time      = time.time()
+    start_time = time.time()
 
-    async with async_playwright() as pw:
-        browser = await pw.chromium.launch(
-            headless=True,
-            args=[
+    async def get_browser(pw):
+        nonlocal proxy_index
+        kwargs = {
+            "headless": True,
+            "args": [
                 "--no-sandbox",
                 "--disable-dev-shm-usage",
                 "--disable-blink-features=AutomationControlled",
-            ],
-        )
+            ]
+        }
+        # Try without proxy first (index 0). If index > 0, use a proxy.
+        if proxy_index > 0 and proxy_index <= len(free_proxies):
+            p = free_proxies[proxy_index - 1]
+            kwargs["proxy"] = {"server": f"http://{p}"}
+            log.info("Launching browser with proxy %s", p)
+        else:
+            log.info("Launching browser without proxy")
+
+        browser = await pw.chromium.launch(**kwargs)
         context = await browser.new_context(
             viewport={"width": 1280, "height": 900},
             user_agent=USER_AGENT,
@@ -619,87 +641,93 @@ async def run_async() -> int:
             locale="en-US",
         )
         page = await context.new_page()
-
-        # Block images and fonts to reduce bandwidth and speed up loads.
         await page.route(
             "**/*",
             lambda route: route.abort()
             if route.request.resource_type in ("image", "media", "font")
             else route.continue_(),
         )
+        return browser, context, page
 
+    async with async_playwright() as pw:
+        browser, context, page = await get_browser(pw)
+        
         try:
             for idx, zip_code in enumerate(zip_codes, start=1):
-                log.info(
-                    "Processing ZIP %s (%d/%d)...",
-                    zip_code, idx, len(zip_codes),
-                )
+                log.info("Processing ZIP %s (%d/%d)...", zip_code, idx, len(zip_codes))
+                
+                facilities = []
+                retry_count = 0
+                max_retries = 15
+                
+                while retry_count < max_retries:
+                    try:
+                        facilities = await scrape_zip(page, zip_code)
+                        if not facilities:
+                            log.warning("  [%s] No facilities found (possibly blocked). Rotating proxy...", zip_code)
+                            await browser.close()
+                            proxy_index += 1
+                            if proxy_index > len(free_proxies) + 1:
+                                log.error("  [%s] Exhausted all proxies. Skipping ZIP.", zip_code)
+                                break
+                            browser, context, page = await get_browser(pw)
+                            retry_count += 1
+                            continue
+                        
+                        # Success
+                        break
+                    except Exception as e:
+                        log.warning("  [%s] Exception during scrape: %s", zip_code, e)
+                        await browser.close()
+                        proxy_index += 1
+                        browser, context, page = await get_browser(pw)
+                        retry_count += 1
 
-                facilities = await scrape_zip(page, zip_code)
-                log.info(
-                    "  ZIP %s: %d facilities found.",
-                    zip_code, len(facilities),
-                )
+                log.info("  ZIP %s: %d facilities found.", zip_code, len(facilities))
 
                 for fac in facilities:
-                    if not fac.get("name"):
-                        continue
-
+                    if not fac.get("name"): continue
                     try:
                         fac_id = _upsert_facility_sparefoot({
-                            "name":     fac["name"],
-                            "brand":    fac.get("brand"),
-                            "address":  fac.get("address", ""),
-                            "city":     fac.get("city", ""),
-                            "state":    fac.get("state", ""),
-                            "zip_code": fac.get("zip_code", zip_code),
-                            "lat":      fac.get("lat"),
-                            "lon":      fac.get("lon"),
-                            "phone":    fac.get("phone"),
-                            "website":  fac.get("website"),
+                            "name": fac["name"], "brand": fac.get("brand"),
+                            "address": fac.get("address", ""), "city": fac.get("city", ""),
+                            "state": fac.get("state", ""), "zip_code": fac.get("zip_code", zip_code),
+                            "lat": fac.get("lat"), "lon": fac.get("lon"),
+                            "phone": fac.get("phone"), "website": fac.get("website"),
                         })
                     except Exception as exc:
-                        log.error(
-                            "  Failed to upsert facility '%s': %s",
-                            fac["name"], exc,
-                        )
+                        log.error("  Failed to upsert facility '%s': %s", fac["name"], exc)
                         continue
 
                     for unit in fac.get("units", []):
                         try:
                             _insert_pricing(
-                                facility_id=fac_id,
-                                unit_size=unit["size"],
-                                web_rate=unit.get("web_rate"),
-                                street_rate=unit.get("street_rate"),
-                                unit_type=unit.get("unit_type"),
-                                availability=unit.get("availability", "available"),
+                                facility_id=fac_id, unit_size=unit["size"],
+                                web_rate=unit.get("web_rate"), street_rate=unit.get("street_rate"),
+                                unit_type=unit.get("unit_type"), availability=unit.get("availability", "available"),
                             )
                             records_written += 1
                         except Exception as exc:
-                            log.error(
-                                "  Failed to insert pricing for '%s' %s: %s",
-                                fac["name"], unit["size"], exc,
-                            )
+                            log.error("  Failed to insert pricing for '%s' %s: %s", fac["name"], unit["size"], exc)
 
-                # Polite delay between ZIP requests.
                 if idx < len(zip_codes):
-                    log.debug(
-                        "  Sleeping %ss before next ZIP...", SCRAPE_DELAY_SECONDS
-                    )
+                    log.debug("  Sleeping %ss before next ZIP...", SCRAPE_DELAY_SECONDS)
                     await asyncio.sleep(SCRAPE_DELAY_SECONDS)
 
         except Exception as exc:
             log.error("Unexpected scraper error: %s", exc, exc_info=True)
-            await _take_debug_screenshot(page, "fatal_error")
+            try:
+                await _take_debug_screenshot(page, "fatal_error")
+            except:
+                pass
         finally:
-            await browser.close()
+            try:
+                await browser.close()
+            except:
+                pass
 
     elapsed = round(time.time() - start_time, 2)
-    log.info(
-        "SpareFoot scraper done. %d pricing rows written in %ss.",
-        records_written, elapsed,
-    )
+    log.info("SpareFoot scraper done. %d pricing rows written in %ss.", records_written, elapsed)
     return records_written
 
 
