@@ -7,6 +7,8 @@ requests>=2.32.0
 beautifulsoup4>=4.12.0
 lxml>=5.3.0
 playwright>=1.45.0          # For JS-heavy sites (Public Storage, Extra Space)
+curl_cffi>=0.7.0            # Cloudflare bypass for StorageCafe ETL
+pgeocode>=0.3.0             # Fast offline zip code lookups
 
 # --- Dashboard ---
 streamlit>=1.35.0
