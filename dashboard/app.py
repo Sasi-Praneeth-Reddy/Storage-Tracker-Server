@@ -104,6 +104,15 @@ with st.spinner("Loading market data..."):
     df_re_raw = load_real_estate_data()
     df_st_raw = load_storage_data()
 
+# Initialize session state for filters to survive page navigation
+if 're_statuses' not in st.session_state: st.session_state.re_statuses = None
+if 're_states' not in st.session_state: st.session_state.re_states = None
+if 're_counties' not in st.session_state: st.session_state.re_counties = None
+if 're_price' not in st.session_state: st.session_state.re_price = None
+
+if 'st_brands' not in st.session_state: st.session_state.st_brands = None
+if 'st_size' not in st.session_state: st.session_state.st_size = None
+
 # Create navigation for the dashboard
 page = st.sidebar.radio("Navigation", ["🏡 Real Estate Market", "📦 Self-Storage Market", "🗄️ Database View"])
 
@@ -115,20 +124,28 @@ if page == "🏡 Real Estate Market":
     st.sidebar.header("🏡 Real Estate Filters")
     # Status filter
     statuses = df_re_raw['status'].dropna().unique().tolist()
-    selected_statuses = st.sidebar.multiselect("Listing Status", options=statuses, default=statuses)
+    default_statuses = st.session_state.re_statuses if st.session_state.re_statuses is not None else statuses
+    selected_statuses = st.sidebar.multiselect("Listing Status", options=statuses, default=default_statuses)
+    st.session_state.re_statuses = selected_statuses
 
     # State filter
     states = sorted(df_re_raw['state'].dropna().unique().tolist())
-    selected_states = st.sidebar.multiselect("States", options=states, default=states)
+    default_states = st.session_state.re_states if st.session_state.re_states is not None else states
+    selected_states = st.sidebar.multiselect("States", options=states, default=default_states)
+    st.session_state.re_states = selected_states
 
     # County filter
     counties = sorted(df_re_raw['county'].dropna().unique().tolist())
-    selected_counties = st.sidebar.multiselect("Counties", options=counties, default=counties)
+    default_counties = st.session_state.re_counties if st.session_state.re_counties is not None else counties
+    selected_counties = st.sidebar.multiselect("Counties", options=counties, default=default_counties)
+    st.session_state.re_counties = selected_counties
 
     # Price filter
     min_price = float(df_re_raw['list_price'].min()) if not df_re_raw['list_price'].empty else 0.0
     max_price = float(df_re_raw['list_price'].max()) if not df_re_raw['list_price'].empty else 5000000.0
-    price_range = st.sidebar.slider("Price Range ($)", min_value=min_price, max_value=max_price, value=(min_price, max_price))
+    default_price = st.session_state.re_price if st.session_state.re_price is not None else (min_price, max_price)
+    price_range = st.sidebar.slider("Price Range ($)", min_value=min_price, max_value=max_price, value=default_price)
+    st.session_state.re_price = price_range
 
     df_re = df_re_raw[
         (df_re_raw['status'].isin(selected_statuses)) &
@@ -269,31 +286,40 @@ elif page == "📦 Self-Storage Market":
     st.sidebar.header("📦 Storage Filters")
     
     st.sidebar.write("---")
-    if st.sidebar.button("🚀 Run Storage Scraper Now", use_container_width=True):
-        with st.sidebar.status("🕵️‍♂️ Scraping in progress...", expanded=True) as status:
-            st.write("🔄 Initializing Free Proxy Rotator...")
-            st.markdown("![Scraping Animation](https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExbnZqcHg4bmZtYWVjM2ZteWZpeWhlZjM4a3gxdXpoYnIydnIyaHA3dSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/fwW8gW6o3XpIEqTf4f/giphy.gif)")
+    status_file = pathlib.Path('.scraper_status')
+    
+    if status_file.exists():
+        st.sidebar.info("🕵️‍♂️ Scraper is running in the background!")
+        st.sidebar.markdown("![Scraping Animation](https://media.giphy.com/media/XIqCQx02E1U9W/giphy.gif)")
+        if st.sidebar.button("🔄 Refresh Status", use_container_width=True):
+            st.rerun()
+    else:
+        if st.sidebar.button("🚀 Run Storage Scraper Now", use_container_width=True):
+            status_file.touch()
+            import threading
+            def bg_run():
+                try:
+                    from collectors.run_all import run_self_storage
+                    run_self_storage(dry_run=False)
+                finally:
+                    if status_file.exists():
+                        status_file.unlink()
+            threading.Thread(target=bg_run, daemon=True).start()
+            st.rerun()
             
-            try:
-                from collectors.run_all import run_self_storage
-                run_self_storage(dry_run=False)
-                status.update(label="✅ Scrape Complete!", state="complete", expanded=False)
-                st.toast('Storage data successfully updated!', icon='🎉')
-                # Clear the cache so the graphs instantly update with new data
-                st.cache_data.clear()
-                st.rerun()
-            except Exception as e:
-                status.update(label="❌ Scrape Failed!", state="error", expanded=True)
-                st.error(f"Error: {e}")
     st.sidebar.write("---")
     
     brands = sorted(df_st_raw['brand'].dropna().unique().tolist())
-    selected_brands = st.sidebar.multiselect("Storage Brands", options=brands, default=brands)
+    default_brands = st.session_state.st_brands if st.session_state.st_brands is not None else brands
+    selected_brands = st.sidebar.multiselect("Storage Brands", options=brands, default=default_brands)
+    st.session_state.st_brands = selected_brands
     
     unit_sizes = sorted(df_st_raw['unit_size'].dropna().unique().tolist())
     if not unit_sizes:
         unit_sizes = ["10x10"]
-    selected_size = st.sidebar.selectbox("Unit Size to Compare", options=unit_sizes)
+    default_size = st.session_state.st_size if st.session_state.st_size in unit_sizes else unit_sizes[0]
+    selected_size = st.sidebar.selectbox("Unit Size to Compare", options=unit_sizes, index=unit_sizes.index(default_size))
+    st.session_state.st_size = selected_size
 
     # Filter storage data
     if selected_brands:
