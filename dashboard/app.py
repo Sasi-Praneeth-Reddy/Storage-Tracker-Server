@@ -270,15 +270,21 @@ elif page == "📦 Self-Storage Market":
     
     st.sidebar.write("---")
     if st.sidebar.button("🚀 Run Storage Scraper Now", use_container_width=True):
-        st.sidebar.info("Starting scraper in the background... check console for logs.")
-        import threading
-        def bg_run():
+        with st.sidebar.status("🕵️‍♂️ Scraping in progress...", expanded=True) as status:
+            st.write("🔄 Initializing Free Proxy Rotator...")
+            st.markdown("![Scraping Animation](https://media2.giphy.com/media/v1.Y2lkPTc5MGI3NjExbnZqcHg4bmZtYWVjM2ZteWZpeWhlZjM4a3gxdXpoYnIydnIyaHA3dSZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/fwW8gW6o3XpIEqTf4f/giphy.gif)")
+            
             try:
                 from collectors.run_all import run_self_storage
                 run_self_storage(dry_run=False)
+                status.update(label="✅ Scrape Complete!", state="complete", expanded=False)
+                st.toast('Storage data successfully updated!', icon='🎉')
+                # Clear the cache so the graphs instantly update with new data
+                st.cache_data.clear()
+                st.rerun()
             except Exception as e:
-                print("Error running scraper:", e)
-        threading.Thread(target=bg_run, daemon=True).start()
+                status.update(label="❌ Scrape Failed!", state="error", expanded=True)
+                st.error(f"Error: {e}")
     st.sidebar.write("---")
     
     brands = sorted(df_st_raw['brand'].dropna().unique().tolist())

@@ -82,8 +82,21 @@ def run_real_estate(dry_run: bool = False):
 def run_self_storage(dry_run: bool = False):
     log.info("=== Starting Self-Storage ETL Collection ===")
     import asyncio
+    from database.db_setup import get_connection
     from collectors.fetch import fetch_all
     from collectors.parse import parse_all
+    
+    if not dry_run:
+        log.info("Wiping previous storage data...")
+        try:
+            conn = get_connection()
+            conn.execute('DELETE FROM pricing_snapshots')
+            conn.execute('DELETE FROM facilities')
+            conn.commit()
+            conn.execute('VACUUM')
+            conn.close()
+        except Exception as e:
+            log.error(f"Failed to wipe old data: {e}")
     
     def run_fetch():
         asyncio.run(fetch_all())
