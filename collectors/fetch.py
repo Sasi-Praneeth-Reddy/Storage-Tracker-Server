@@ -57,7 +57,7 @@ async def fetch_zip(zip_code, session, sem, today_str):
 
     async with sem:
         retries = 0
-        max_retries = 15
+        max_retries = 4
         
         while retries < max_retries:
             proxy_url = None
