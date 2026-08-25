@@ -155,6 +155,86 @@ def get_storage_kpis() -> dict:
     }
 
 
+def get_monthly_re_comparison() -> dict:
+    """Compare current month vs. previous month for real estate listings."""
+    cur_start  = datetime.utcnow().replace(day=1).date().isoformat()
+    prev_month = (datetime.utcnow().replace(day=1) - timedelta(days=1))
+    prev_start = prev_month.replace(day=1).date().isoformat()
+    prev_end   = prev_month.date().isoformat()
+
+    def _month_stats(start, end):
+        rows = _q("""
+            SELECT
+                COUNT(*) as total,
+                SUM(CASE WHEN status = 'for_sale' THEN 1 ELSE 0 END) as active,
+                SUM(CASE WHEN status = 'under_contract' THEN 1 ELSE 0 END) as under_contract,
+                AVG(list_price) as avg_price,
+                SUM(CASE WHEN previous_status IS NOT NULL THEN 1 ELSE 0 END) as status_changed
+            FROM pre_mover_leads
+            WHERE date(scraped_at) >= ? AND date(scraped_at) <= ?
+        """, (start, end))
+        r = rows[0] if rows else {}
+        return {
+            "total": r.get("total") or 0,
+            "active": r.get("active") or 0,
+            "under_contract": r.get("under_contract") or 0,
+            "avg_price": r.get("avg_price") or 0,
+            "status_changed": r.get("status_changed") or 0,
+        }
+
+    cur  = _month_stats(cur_start,  datetime.utcnow().date().isoformat())
+    prev = _month_stats(prev_start, prev_end)
+    return {"current": cur, "previous": prev,
+            "cur_label":  datetime.utcnow().strftime("%B %Y"),
+            "prev_label": prev_month.strftime("%B %Y")}
+
+
+def get_new_realtor_listings(limit: int = 15) -> list[dict]:
+    """Most recently added realtor listings."""
+    return _q("""
+        SELECT address, city, state, zip_code, status,
+               list_price, realtor_name, realtor_phone, realtor_email, scraped_at
+        FROM pre_mover_leads
+        WHERE realtor_name IS NOT NULL AND realtor_name != ''
+        ORDER BY scraped_at DESC
+        LIMIT ?
+    """, (limit,))
+
+
+def get_monthly_storage_comparison() -> list[dict]:
+    """Average price per unit size this month vs. last month."""
+    cur_start  = datetime.utcnow().replace(day=1).date().isoformat()
+    prev_month = (datetime.utcnow().replace(day=1) - timedelta(days=1))
+    prev_start = prev_month.replace(day=1).date().isoformat()
+    prev_end   = prev_month.date().isoformat()
+
+    cur_rows  = _q("""
+        SELECT unit_size, ROUND(AVG(web_rate), 2) AS avg_rate
+        FROM pricing_snapshots
+        WHERE date(scraped_at) >= ?
+          AND web_rate IS NOT NULL
+        GROUP BY unit_size ORDER BY unit_size
+    """, (cur_start,))
+    prev_rows = _q("""
+        SELECT unit_size, ROUND(AVG(web_rate), 2) AS avg_rate
+        FROM pricing_snapshots
+        WHERE date(scraped_at) >= ? AND date(scraped_at) <= ?
+          AND web_rate IS NOT NULL
+        GROUP BY unit_size ORDER BY unit_size
+    """, (prev_start, prev_end))
+
+    cur_map  = {r["unit_size"]: r["avg_rate"] for r in cur_rows}
+    prev_map = {r["unit_size"]: r["avg_rate"] for r in prev_rows}
+    all_sizes = sorted(set(cur_map) | set(prev_map))
+    result = []
+    for s in all_sizes:
+        c = cur_map.get(s)
+        p = prev_map.get(s)
+        pct = round((c - p) / p * 100, 1) if c and p and p > 0 else None
+        result.append({"unit_size": s, "cur": c, "prev": p, "pct_change": pct})
+    return result
+
+
 # ── HTML building blocks ─────────────────────────────────────────
 
 def _cell(text, bold=False, color=None, align="left"):
@@ -324,6 +404,121 @@ def _build_health_section(rows: list[dict]) -> str:
     return items
 
 
+# ── New section builders ──────────────────────────────────────────
+
+def _build_monthly_re_section(data: dict) -> str:
+    if not data:
+        return "<p style='color:{};'>No monthly comparison data available.</p>".format(TEXT_MUTED)
+    cur  = data["current"]
+    prev = data["previous"]
+    cl   = data.get("cur_label",  "This Month")
+    pl   = data.get("prev_label", "Last Month")
+
+    def _arrow(c, p, higher_is_better=True):
+        if not p or p == 0: return ""
+        pct = (c - p) / abs(p) * 100
+        up = pct >= 0
+        color = POSITIVE if up == higher_is_better else NEGATIVE
+        sym = "↑" if up else "↓"
+        return "<span style='color:{};font-size:11px;margin-left:4px;'>{} {:.1f}%</span>".format(color, sym, abs(pct))
+
+    rows = [
+        ("Total Listings Added",   cur["total"],          prev["total"],          True),
+        ("Active (For Sale)",       cur["active"],         prev["active"],         True),
+        ("Under Contract",          cur["under_contract"], prev["under_contract"], True),
+        ("Avg List Price ($)",      cur["avg_price"],      prev["avg_price"],      False),
+        ("Status Changes Detected", cur["status_changed"], prev["status_changed"], True),
+    ]
+
+    header = "<tr>{}</tr>".format("".join(_header_cell(h) for h in ["Metric", pl, cl, "Change"]))
+    body_rows = ""
+    for label, c_val, p_val, hib in rows:
+        fmt = "${:,.0f}".format if label.startswith("Avg") else "{:,}".format
+        body_rows += "<tr>{}</tr>".format("".join([
+            _cell(label, bold=True),
+            _cell(fmt(p_val or 0), color=TEXT_MUTED),
+            _cell(fmt(c_val or 0), bold=True, color=ACCENT),
+            _cell(_arrow(c_val or 0, p_val or 0, hib), align="center"),
+        ]))
+
+    return """
+    <table width='100%' cellpadding='0' cellspacing='0'
+           style='border-collapse:collapse; font-size:13px;'>
+      <thead>{header}</thead>
+      <tbody>{body}</tbody>
+    </table>
+    """.format(header=header, body=body_rows)
+
+
+def _build_realtor_listings_section(rows: list) -> str:
+    if not rows:
+        return "<p style='color:{};'>No recent realtor listings found.</p>".format(TEXT_MUTED)
+
+    header = "<tr>{}</tr>".format("".join(
+        _header_cell(h) for h in ["Realtor", "Address", "City / ZIP", "Status", "Price", "Phone"]
+    ))
+    body_rows = ""
+    for r in rows:
+        status_color = POSITIVE if r.get("status") == "for_sale" else "#FF9800"
+        price_str = "${:,.0f}".format(r["list_price"]) if r.get("list_price") else "N/A"
+        status_str = (r.get("status") or "").replace("_", " ").title()
+        body_rows += "<tr>{}</tr>".format("".join([
+            _cell(r.get("realtor_name", ""), bold=True),
+            _cell(r.get("address", "")),
+            _cell("{} {}".format(r.get("city", ""), r.get("zip_code", ""))),
+            _cell("<span style='color:{};font-weight:600;'>{}</span>".format(status_color, status_str)),
+            _cell(price_str, color=ACCENT, bold=True),
+            _cell(r.get("realtor_phone", "") or "—", color=TEXT_MUTED),
+        ]))
+
+    return """
+    <table width='100%' cellpadding='0' cellspacing='0'
+           style='border-collapse:collapse; font-size:13px;'>
+      <thead>{header}</thead>
+      <tbody>{body}</tbody>
+    </table>
+    """.format(header=header, body=body_rows)
+
+
+def _build_storage_movement_section(rows: list) -> str:
+    if not rows:
+        return "<p style='color:{};'>No storage pricing comparison data available.</p>".format(TEXT_MUTED)
+
+    header = "<tr>{}</tr>".format("".join(
+        _header_cell(h) for h in ["Unit Size", "Last Month Avg", "This Month Avg", "Change"]
+    ))
+    body_rows = ""
+    for r in rows:
+        c   = r.get("cur")
+        p   = r.get("prev")
+        pct = r.get("pct_change")
+
+        if pct is not None:
+            if pct > 0:
+                change_html = "<span style='color:{};font-weight:700;'>↑ +{:.1f}%</span>".format(NEGATIVE, pct)
+            elif pct < 0:
+                change_html = "<span style='color:{};font-weight:700;'>↓ {:.1f}%</span>".format(POSITIVE, pct)
+            else:
+                change_html = "<span style='color:{};'>— 0.0%</span>".format(TEXT_MUTED)
+        else:
+            change_html = "<span style='color:{};'>N/A</span>".format(TEXT_MUTED)
+
+        body_rows += "<tr>{}</tr>".format("".join([
+            _cell(r["unit_size"], bold=True),
+            _cell("${:,.2f}".format(p) if p else "N/A", color=TEXT_MUTED),
+            _cell("${:,.2f}".format(c) if c else "N/A", bold=True, color=ACCENT),
+            _cell(change_html, align="center"),
+        ]))
+
+    return """
+    <table width='100%' cellpadding='0' cellspacing='0'
+           style='border-collapse:collapse; font-size:13px;'>
+      <thead>{header}</thead>
+      <tbody>{body}</tbody>
+    </table>
+    """.format(header=header, body=body_rows)
+
+
 # ── Main report assembler ─────────────────────────────────────────
 
 def build_report() -> str:
@@ -335,13 +530,16 @@ def build_report() -> str:
     date_str  = now.strftime("%A, %B %d, %Y")
     title_str = "Storage Market Daily Report — {}".format(date_str)
 
-    pricing   = get_pricing_summary()
-    leads     = get_top_zip_leads()
-    promos    = get_active_promotions()
-    health    = get_scrape_health()
-    fac_count = get_facility_count()
-    re_kpis   = get_real_estate_kpis()
-    st_kpis   = get_storage_kpis()
+    pricing      = get_pricing_summary()
+    leads        = get_top_zip_leads()
+    promos       = get_active_promotions()
+    health       = get_scrape_health()
+    fac_count    = get_facility_count()
+    re_kpis      = get_real_estate_kpis()
+    st_kpis      = get_storage_kpis()
+    monthly_re   = get_monthly_re_comparison()
+    new_listings = get_new_realtor_listings()
+    storage_move = get_monthly_storage_comparison()
 
     re_kpi_html = _kpi_row([
         ("Total Listings",    "{:,}".format(re_kpis.get("total", 0)), BRAND_COLOR),
@@ -360,18 +558,27 @@ def build_report() -> str:
 
     body = """
     {re_kpi}
+    {monthly_re}
+    {new_listings}
     {st_kpi}
+    {storage_move}
     {pricing}
     {leads}
     {promos}
     {health}
     """.format(
-        re_kpi  = _section("🏡 Real Estate Market Overview", re_kpi_html),
-        st_kpi  = _section("📦 Self-Storage Market Overview", st_kpi_html),
-        pricing = _section("Storage Pricing Summary (Last 24h)", _build_pricing_section(pricing)),
-        leads   = _section("Top ZIP Codes by Pre-Mover Lead Activity", _build_leads_section(leads)),
-        promos  = _section("Active Storage Promotions", _build_promos_section(promos)),
-        health  = _section("Data Collection Health", _build_health_section(health)),
+        re_kpi       = _section("🏡 Real Estate Market Overview", re_kpi_html),
+        monthly_re   = _section("📊 Monthly Real Estate Comparison ({} vs {})".format(
+                            monthly_re.get("prev_label","Last Month"),
+                            monthly_re.get("cur_label","This Month")),
+                            _build_monthly_re_section(monthly_re)),
+        new_listings = _section("🏠 Latest Realtor Listings", _build_realtor_listings_section(new_listings)),
+        st_kpi       = _section("📦 Self-Storage Market Overview", st_kpi_html),
+        storage_move = _section("📈 Storage Price Movement (Month over Month)", _build_storage_movement_section(storage_move)),
+        pricing      = _section("Storage Pricing Summary (Last 24h)", _build_pricing_section(pricing)),
+        leads        = _section("Top ZIP Codes by Pre-Mover Lead Activity", _build_leads_section(leads)),
+        promos       = _section("Active Storage Promotions", _build_promos_section(promos)),
+        health       = _section("Data Collection Health", _build_health_section(health)),
     )
 
     html = """<!DOCTYPE html>
