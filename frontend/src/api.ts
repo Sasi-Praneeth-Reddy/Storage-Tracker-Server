@@ -53,6 +53,24 @@ export const realEstate = {
 
   getFilterOptions: () =>
     api.get('/real-estate/filter-options').then(r => r.data),
+
+  getBenchmarks: (params?: Record<string, any>) =>
+    api.get('/real-estate/benchmarks', { params }).then(r => r.data),
+
+  addBenchmark: (data: any) =>
+    api.post('/real-estate/benchmarks', data).then(r => r.data),
+
+  bulkUploadBenchmarks: (records: any[]) =>
+    api.post('/real-estate/benchmarks/bulk', records).then(r => r.data),
+
+  getComparisons: (params?: Record<string, any>) =>
+    api.get('/real-estate/comparisons', { params }).then(r => r.data),
+
+  getUnderContractTimer: () =>
+    api.get('/real-estate/under-contract-timer').then(r => r.data),
+
+  contactRealtor: (data: { lead_id: number; contacted: boolean; notes?: string }) =>
+    api.post('/real-estate/contact-realtor', data).then(r => r.data),
 };
 
 // ── Database ───────────────────────────────────────────────

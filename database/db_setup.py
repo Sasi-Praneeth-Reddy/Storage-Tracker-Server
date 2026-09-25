@@ -104,6 +104,36 @@ def create_tables(conn: sqlite3.Connection) -> None:
             ON mls_market_data(zip_code, fetched_at)
     """)
 
+    # ── MLS Historical Benchmarks (NVAR & Bright MLS) ───────────
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS mls_benchmarks (
+            id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+            source                  TEXT NOT NULL DEFAULT 'NVAR',
+            period_type             TEXT NOT NULL DEFAULT 'monthly',
+            period_date             TEXT NOT NULL,
+            year                    INTEGER,
+            month                   INTEGER,
+            region                  TEXT NOT NULL DEFAULT 'Northern Virginia',
+            new_listings            INTEGER DEFAULT 0,
+            active_listings         INTEGER DEFAULT 0,
+            closed_sales            INTEGER DEFAULT 0,
+            pending_sales           INTEGER DEFAULT 0,
+            delisted_listings       INTEGER DEFAULT 0,
+            median_days_on_market   REAL DEFAULT 0,
+            avg_days_to_contract    REAL DEFAULT 0,
+            avg_list_price          REAL DEFAULT 0,
+            avg_close_price         REAL DEFAULT 0,
+            median_close_price      REAL DEFAULT 0,
+            close_to_list_ratio     REAL DEFAULT 100.0,
+            notes                   TEXT,
+            created_at              TEXT DEFAULT (datetime('now'))
+        )
+    """)
+    cursor.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_benchmarks_source_period_region
+            ON mls_benchmarks(source, period_date, region)
+    """)
+
     # ── Pre-Mover Leads (USA Home Listings) ──────────────────────
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS pre_mover_leads (
