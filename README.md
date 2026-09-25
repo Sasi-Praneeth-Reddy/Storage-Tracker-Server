@@ -1,4 +1,4 @@
-# 🏢 Market Tracking Dashboard (Real Estate & Self-Storage)
+﻿# 📦 Market Tracking Dashboard (Real Estate & Self-Storage)
 
 A fully automated, dual-purpose data tracking system and dashboard. It tracks **Self-Storage pricing & availability** alongside **MLS Real Estate / Pre-Mover activity** across Northern Virginia, Washington DC, and neighboring Maryland.
 
@@ -16,13 +16,12 @@ Follow these steps to set up the project from scratch on your local machine.
 - Windows, macOS, or Linux
 
 ### 2. Clone & Setup
-First, clone the repository and navigate into the project directory:
 ```bash
 git clone <repository_url>
 cd self_storrage_tracking
 ```
 
-Next, create a fresh Python virtual environment and activate it:
+Create a virtual environment and activate it:
 ```bash
 # On Windows
 python -m venv venv
@@ -37,12 +36,9 @@ Install all required dependencies:
 ```bash
 pip install -r requirements.txt
 ```
-*(If you are running Playwright scrapers, you may also need to run `playwright install chromium`)*
 
 ### 3. Configure Environment Variables
-The system relies on a `.env` file for API keys and email configuration. 
-
-Create a file named `.env` in the root directory and add the following variables:
+Create a `.env` file in the root directory:
 ```ini
 # --- Required for Email Reports ---
 BREVO_API_KEY=your_brevo_api_key_here
@@ -50,50 +46,128 @@ EMAIL_FROM_ADDRESS=your_verified_brevo_email@example.com
 EMAIL_FROM_NAME="Around Town Movers Storage Tracker"
 EMAIL_TO_ADDRESSES=recipient1@example.com,recipient2@example.com
 
-# --- Required for Google Maps Scraper ---
+# --- USA Home Listings (Real Estate leads) ---
+USAHOMELISTINGS_EMAIL=your_email@example.com
+USAHOMELISTINGS_PASSWORD=your_password
+
+# --- Optional ---
 GOOGLE_MAPS_API_KEY=your_google_maps_api_key_here
 ```
-*Note: Make sure your `EMAIL_FROM_ADDRESS` is a verified sender in your Brevo account, otherwise emails will be silently blocked (HTTP 401).*
 
 ### 4. Database Initialization
-The system uses a unified SQLite database (`database/storage_tracker.db`). Initialize the database to create all the necessary tables (`pre_mover_leads`, `facilities`, `pricing_snapshots`, `email_log`):
 ```bash
 python database/db_setup.py
 ```
 
 ### 5. Running Data Collectors (Scrapers)
-You can run the collectors individually to pull fresh market data into your database:
 ```bash
-# 1. Discover Self-Storage facilities via Google Maps API
-python collectors/google_maps_collector.py
+# Run all collectors (storage + real estate)
+python collectors/run_all.py
 
-# 2. Pull live pricing from Public Storage facilities
-python collectors/public_storage_scraper.py
-
-# 3. Pull live pricing from Extra Space Storage (Warning: strict bot protection)
-python collectors/extra_space_scraper.py
+# OR run the StorageCafe ETL individually
+python collectors/fetch.py
+python collectors/parse.py
 ```
 
 ### 6. Launch the Dashboard
-To view the data on the interactive Streamlit dashboard:
 ```bash
 streamlit run dashboard/app.py
 ```
-This will open the dashboard in your default web browser at `http://localhost:8501`.
+Opens at `http://localhost:8501`.
 
 ### 7. Run the Email Reporter & Scheduler
-To test the email reporting system manually:
 ```bash
-# Send a test email to verify Brevo configuration
-python -c "from email_reports.brevo_sender import send_test_email; send_test_email()"
-
-# Send the actual full HTML daily report
+# Send the full HTML daily report immediately
 python -c "from email_reports.brevo_sender import send_daily_report; send_daily_report()"
+
+# Start the automated background scheduler (runs daily at 11:45 AM ET)
+python scheduler/daily_job.py
 ```
 
-To run the automated background scheduler (which runs scrapers and sends the email at 7:00 AM daily):
+---
+
+## ☁️ AWS Deployment Guide (Docker)
+
+This is the recommended way to run the project 24/7 on an AWS EC2 instance (or any Linux VPS).
+
+### Prerequisites on the server
 ```bash
-python scheduler/daily_job.py
+sudo apt update
+sudo apt install -y docker.io docker-compose git
+sudo systemctl enable docker
+sudo systemctl start docker
+sudo usermod -aG docker $USER   # so you can run docker without sudo
+```
+> Log out and back in after running `usermod` for it to take effect.
+
+### Step 1: Clone the project
+```bash
+git clone https://github.com/Sasi-Praneeth-Reddy/Storage-Tracker-Server.git
+cd Storage-Tracker-Server
+```
+
+### Step 2: Create your .env file
+```bash
+cp .env.example .env
+nano .env   # fill in your API keys and email settings
+```
+
+### Step 3: Build and start the containers (first time only)
+```bash
+sudo docker-compose build
+sudo docker-compose up -d
+```
+This starts two containers:
+- **`storage_dashboard`** — Streamlit web app on port `8501`
+- **`storage_scheduler`** — background daily job runner
+
+### Step 4: Open port 8501 in AWS
+In the AWS Console → EC2 → Security Groups → add an **Inbound Rule**:
+- Type: Custom TCP
+- Port: `8501`
+- Source: `0.0.0.0/0`
+
+Your dashboard will be live at: `http://YOUR_EC2_PUBLIC_IP:8501`
+
+---
+
+## 🔄 Updating the Project (After Code Changes)
+
+Because the project uses **volume mounts** (local folders are mounted directly into the Docker containers), you **never need to rebuild** after a code change. Just pull and restart:
+
+```bash
+cd ~/Storage-Tracker-Server
+git pull origin main
+sudo docker-compose restart
+```
+
+> ✅ Your database (`database/storage_tracker.db`) is safe — it lives on the server disk and is never touched by Docker restarts or rebuilds.
+
+---
+
+## 📋 Useful Docker Commands
+
+```bash
+# Check if containers are running
+sudo docker ps
+
+# View live logs for the dashboard (shows scraper output)
+sudo docker logs -f --tail 100 storage_dashboard
+
+# View live logs for the scheduler (shows daily job status)
+sudo docker logs -f --tail 100 storage_scheduler
+
+# Stop all containers
+sudo docker-compose down
+
+# Start all containers
+sudo docker-compose up -d
+
+# Trigger the email report manually
+sudo docker exec storage_scheduler python -c "from email_reports.brevo_sender import send_daily_report; send_daily_report()"
+
+# Run the scrapers manually right now
+sudo docker exec storage_scheduler python collectors/run_all.py
 ```
 
 ---
@@ -101,33 +175,34 @@ python scheduler/daily_job.py
 ## 🏗️ Architecture & Component Guide
 
 ### 1. Data Models (`database/db_setup.py`)
-- **`pre_mover_leads`**: Stores real estate MLS data.
-- **`facilities`**: Physical self-storage locations discovered via Google Maps. Includes brand, lat/lon, and address.
-- **`pricing_snapshots`**: Daily price log for self-storage units. Maps a `facility_id` and `unit_size` (e.g., 10x10) to a `web_rate` and `street_rate`.
+- **`pre_mover_leads`**: Stores real estate MLS data (listings, prices, realtor info).
+- **`facilities`**: Physical self-storage locations. Includes brand, lat/lon, and address.
+- **`pricing_snapshots`**: Daily price log for self-storage units (e.g., 10x10 → $119/mo).
 - **`email_log` & `scrape_log`**: Audit tables to track system health.
 
-### 2. The Email System (`email_reports/`)
-- **`report_builder.py`**: Queries the SQLite database and generates a beautifully styled HTML email template containing KPI cards and market summaries matching the Streamlit dashboard.
-- **`brevo_sender.py`**: Uses the `requests` library to securely dispatch the HTML payload to the Brevo (Sendinblue) transactional email API.
+### 2. The Scraper Pipeline (`collectors/`)
+| File | Purpose |
+|---|---|
+| `fetch.py` | Downloads raw HTML from StorageCafe for each ZIP code |
+| `parse.py` | Parses HTML and saves pricing to the database, then deletes HTML files |
+| `run_all.py` | Orchestrates all collectors in the right order |
+| `portal_exporter.py` | Pulls real estate leads from USA Home Listings portal |
+| `csv_importer.py` | Imports listings from CSV files |
 
-### 3. The Dashboard (`dashboard/app.py`)
-Built with Streamlit and styled with custom CSS for a premium dark-mode aesthetic. Features a **Real Estate Page** and a **Self-Storage Page** with interactive Folium maps and Plotly charts.
+### 3. The Email System (`email_reports/`)
+- **`report_builder.py`**: Queries SQLite and generates a styled HTML email with KPI cards, monthly comparisons, realtor listings, and storage price trends.
+- **`brevo_sender.py`**: Sends the HTML email via the Brevo transactional email API.
 
----
-
-## ☁️ Cloud Deployment (Docker)
-
-To run this system 24/7 without keeping your local machine awake, the project is designed to be containerized using Docker and deployed to a Virtual Private Server (VPS) like AWS EC2, Google Cloud, or DigitalOcean.
-
-1. **Dockerfile**: Packages Python 3.11, the requirements, and the source code.
-2. **docker-compose.yml**: Spins up two services simultaneously:
-   - `dashboard` (exposing port 8501)
-   - `scheduler` (running `daily_job.py` in the background)
-3. **Volume Mount**: Ensure the `database/` folder is mounted as a persistent Docker volume so SQLite data is not lost when containers restart.
+### 4. The Dashboard (`dashboard/app.py`)
+Built with Streamlit. Features:
+- **Real Estate Page**: Date range filter, MoM KPI comparisons, weekly charts, county breakdown, Top Realtors table.
+- **Self-Storage Page**: Price trend by brand, price movement vs. previous period, market share.
+- **Database View**: Searchable raw data explorer.
 
 ---
 
 ## ⚠️ Known Limitations & Troubleshooting
-- **Bot Protection (403 Errors)**: Extra Space and aggregator sites (Sparefoot) use aggressive Cloudflare protection. Headless scraping may fail. Consider using residential proxies or increasing `SCRAPE_DELAY_SECONDS` in `config.py`.
-- **Brevo Email Rejections**: If the script logs a successful send but you receive no email, verify that the `EMAIL_FROM_ADDRESS` is authenticated in your Brevo account dashboard.
-- **Database Locks**: If you see `sqlite3.OperationalError: database is locked`, ensure multiple scripts aren't trying to write to the SQLite file simultaneously.
+- **Bot Protection (403 Errors)**: StorageCafe uses bot detection. The scraper automatically rotates through free US proxies if blocked. Max 4 retries per ZIP code.
+- **Brevo Email Rejections**: Verify that `EMAIL_FROM_ADDRESS` is an authenticated sender in your Brevo dashboard.
+- **Database Locks**: If you see `sqlite3.OperationalError: database is locked`, ensure only one scraper process is writing at a time.
+- **Animation still showing after scrape**: Click the **🔄 Refresh** button on the dashboard — Streamlit does not auto-refresh when background tasks finish.
