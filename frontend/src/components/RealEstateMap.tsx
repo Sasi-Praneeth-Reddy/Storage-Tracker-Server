@@ -3,6 +3,7 @@
  * Free OpenStreetMap Leaflet map for real estate listings.
  * Colour-coded by listing status. No API key required.
  */
+import { useState } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
 
 const STATUS_COLOR: Record<string, string> = {
@@ -28,6 +29,7 @@ interface RealEstateMapProps {
 }
 
 export default function RealEstateMap({ listings, height = 500 }: RealEstateMapProps) {
+  const [mapTheme, setMapTheme] = useState<'dark' | 'osm'>('dark');
   const mapped = listings.filter(l => l.latitude && l.longitude);
 
   // Sample if too many markers for performance
@@ -42,7 +44,25 @@ export default function RealEstateMap({ listings, height = 500 }: RealEstateMapP
       : [38.9072, -77.0369];
 
   return (
-    <>
+    <div style={{ position: 'relative' }}>
+      <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 1000, display: 'flex', gap: 4 }}>
+        <button
+          type="button"
+          onClick={() => setMapTheme(mapTheme === 'dark' ? 'osm' : 'dark')}
+          style={{
+            background: 'rgba(30, 33, 41, 0.85)',
+            border: '1px solid var(--border)',
+            borderRadius: 6,
+            color: 'var(--text-primary)',
+            padding: '4px 10px',
+            fontSize: 11,
+            cursor: 'pointer',
+            backdropFilter: 'blur(4px)',
+          }}
+        >
+          {mapTheme === 'dark' ? '🗺️ Switch to Street Map' : '🌙 Switch to Dark Map'}
+        </button>
+      </div>
       {mapped.length > 1500 && (
         <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginBottom: 6 }}>
           Showing first 1,500 of {mapped.length.toLocaleString()} properties for performance
@@ -54,12 +74,19 @@ export default function RealEstateMap({ listings, height = 500 }: RealEstateMapP
         style={{ height, borderRadius: 8, width: '100%' }}
         scrollWheelZoom
       >
-        <TileLayer
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-          subdomains="abcd"
-          maxZoom={19}
-        />
+        {mapTheme === 'dark' ? (
+          <TileLayer
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+            attribution='&copy; <a href="https://www.esri.com/">Esri</a>, HERE, Garmin'
+            maxZoom={16}
+          />
+        ) : (
+          <TileLayer
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            maxZoom={19}
+          />
+        )}
         {displayed.map((l, i) => (
           <CircleMarker
             key={i}
@@ -87,6 +114,6 @@ export default function RealEstateMap({ listings, height = 500 }: RealEstateMapP
           </CircleMarker>
         ))}
       </MapContainer>
-    </>
+    </div>
   );
 }

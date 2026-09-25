@@ -3,6 +3,7 @@
  * Leaflet map using free OpenStreetMap tiles — no API key required.
  * Markers are colour-coded by brand. Clicking shows facility details.
  */
+import { useState } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -67,20 +68,47 @@ export default function StorageMap({ facilities, selectedSize, height = 500 }: S
         ]
       : [38.9072, -77.0369]; // Tysons Corner default
 
+  const [mapTheme, setMapTheme] = useState<'dark' | 'osm'>('dark');
+
   return (
-    <MapContainer
-      center={center}
-      zoom={9}
-      style={{ height, borderRadius: 8, width: '100%' }}
-      scrollWheelZoom
-    >
-      {/* Free OpenStreetMap — CartoDB Dark Matter style, no key needed */}
-      <TileLayer
-        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-        subdomains="abcd"
-        maxZoom={19}
-      />
+    <div style={{ position: 'relative' }}>
+      <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 1000, display: 'flex', gap: 4 }}>
+        <button
+          type="button"
+          onClick={() => setMapTheme(mapTheme === 'dark' ? 'osm' : 'dark')}
+          style={{
+            background: 'rgba(30, 33, 41, 0.85)',
+            border: '1px solid var(--border)',
+            borderRadius: 6,
+            color: 'var(--text-primary)',
+            padding: '4px 10px',
+            fontSize: 11,
+            cursor: 'pointer',
+            backdropFilter: 'blur(4px)',
+          }}
+        >
+          {mapTheme === 'dark' ? '🗺️ Switch to Street Map' : '🌙 Switch to Dark Map'}
+        </button>
+      </div>
+      <MapContainer
+        center={center}
+        zoom={9}
+        style={{ height, borderRadius: 8, width: '100%' }}
+        scrollWheelZoom
+      >
+        {mapTheme === 'dark' ? (
+          <TileLayer
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}"
+            attribution='&copy; <a href="https://www.esri.com/">Esri</a>, HERE, Garmin'
+            maxZoom={16}
+          />
+        ) : (
+          <TileLayer
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            maxZoom={19}
+          />
+        )}
       {deduped.map(f => {
         const priceLabel =
           f.web_rate != null ? `$${f.web_rate.toFixed(0)}/mo` : 'N/A';
@@ -113,6 +141,7 @@ export default function StorageMap({ facilities, selectedSize, height = 500 }: S
           </CircleMarker>
         );
       })}
-    </MapContainer>
+      </MapContainer>
+    </div>
   );
 }
