@@ -1,7 +1,13 @@
-# Use a tiny version of Python to save disk space!
-FROM python:3.10-slim
+# Stage 1: Build React Frontend
+FROM node:20-alpine AS frontend-builder
+WORKDIR /app/frontend
+COPY frontend/package*.json ./
+RUN npm install
+COPY frontend/ ./
+RUN npm run build
 
-# Set the working directory in the container
+# Stage 2: Python Backend & Scrapers
+FROM python:3.10-slim
 WORKDIR /app
 
 # Copy the requirements file into the container
@@ -11,14 +17,18 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Install Playwright and ONLY the Chromium browser (and its OS dependencies)
-# This prevents downloading Firefox/WebKit which saves gigabytes of space.
 RUN playwright install chromium --with-deps
 
 # Copy the current directory contents into the container at /app
 COPY . .
 
+# Copy compiled frontend from Stage 1
+COPY --from=frontend-builder /app/frontend/dist /app/frontend/dist
+
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 
-# Make port 8501 available to the world outside this container
-EXPOSE 8501
+# Expose ports: 8000 for React+FastAPI (v2), 8501 for Streamlit (v1)
+EXPOSE 8000 8501
+
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
