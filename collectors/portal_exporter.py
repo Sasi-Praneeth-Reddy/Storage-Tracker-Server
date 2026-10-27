@@ -87,19 +87,24 @@ async def login(page):
 
     # Submit login form
     await page.click('button[type="submit"]')
-    await page.wait_for_timeout(5000)
-
-    # Verify if login successfully navigated away from /login
-    if "/login" in page.url:
+    
+    # Wait for navigation away from /login
+    try:
+        await page.wait_for_url(lambda u: "/portal" in u or "/login" not in u, timeout=15000)
+        log.info("Successfully logged in! Current URL: %s", page.url)
+    except Exception:
         DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+        err_text = await page.evaluate("""() => {
+            const el = document.querySelector('.alert, [role="alert"], .text-danger, .invalid-feedback, .text-red-600, .error');
+            return el ? el.textContent.trim().replace(/\\s+/g, ' ') : null;
+        }""")
         ss_path = DEBUG_DIR / "login_failed_still_on_login.png"
-        await page.screenshot(path=str(ss_path))
+        await page.screenshot(path=str(ss_path), full_page=True)
         raise RuntimeError(
             f"Authentication failed: browser is still on {page.url}. "
+            f"Page error message: '{err_text}'. "
             f"Screenshot saved to {ss_path}. Check credentials, 2FA, or bot challenge."
         )
-
-    log.info("Successfully logged in! Current URL: %s", page.url)
 
 
 # ── Get the listings iframe ───────────────────────────────────────
@@ -364,6 +369,8 @@ async def export_by_state_chunked(page, frame, context, state_name: str) -> int:
     opened = await click_dropdown_by_index(frame, 0)
     if not opened:
         log.warning("  Could not open States dropdown for %s", state_name)
+        DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+        await page.screenshot(path=str(DEBUG_DIR / f"dropdown_failed_{state_name}.png"))
         return 0
 
     await frame.wait_for_timeout(800)
