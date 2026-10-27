@@ -1,10 +1,29 @@
 version: '3.8'
 
 services:
-  dashboard:
+  # React + FastAPI Dashboard (v2 - Primary)
+  dashboard-v2:
     build: .
-    container_name: storage_dashboard
-    command: streamlit run dashboard/app.py --server.address=0.0.0.0
+    container_name: storage_dashboard_v2
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./database:/app/database
+      - ./.env:/app/.env
+      - ./api:/app/api
+      - ./frontend/dist:/app/frontend/dist
+      - ./collectors:/app/collectors
+      - ./scheduler:/app/scheduler
+    restart: unless-stopped
+    environment:
+      - TZ=America/New_York
+
+  # Streamlit Dashboard (v1 - Legacy fallback)
+  dashboard-v1:
+    build: .
+    container_name: storage_dashboard_v1
+    command: streamlit run dashboard/app.py --server.address=0.0.0.0 --server.port=8501
     ports:
       - "8501:8501"
     volumes:
@@ -17,6 +36,7 @@ services:
     environment:
       - TZ=America/New_York
 
+  # Automated Daily Scheduler
   scheduler:
     build: .
     container_name: storage_scheduler
@@ -24,7 +44,6 @@ services:
     volumes:
       - ./database:/app/database
       - ./.env:/app/.env
-      - ./dashboard:/app/dashboard
       - ./collectors:/app/collectors
       - ./scheduler:/app/scheduler
     restart: unless-stopped

@@ -201,6 +201,41 @@ def get_new_realtor_listings(limit: int = 15) -> list[dict]:
     """, (limit,))
 
 
+def get_affiliate_reminders(limit: int = 12) -> list[dict]:
+    """Retrieve listings under contract approaching closing for affiliate realtor outreach."""
+    today = datetime.utcnow().date()
+    rows = _q("""
+        SELECT id, address, city, state, zip_code, list_price,
+               realtor_name, realtor_phone, realtor_email,
+               COALESCE(contract_date, status_updated_at, scraped_at) AS contract_start,
+               realtor_contacted
+        FROM pre_mover_leads
+        WHERE status = 'under_contract' OR previous_status = 'for_sale'
+        ORDER BY contract_start DESC
+        LIMIT ?
+    """, (limit,))
+
+    results = []
+    for r in rows:
+        try:
+            c_date = datetime.strptime(str(r["contract_start"])[:10], "%Y-%m-%d").date()
+        except Exception:
+            c_date = today - timedelta(days=10)
+        days_in = (today - c_date).days
+        days_rem = max(0, 30 - days_in)
+        est_close = c_date + timedelta(days=30)
+        results.append({
+            **r,
+            "days_under_contract": days_in,
+            "days_remaining": days_rem,
+            "est_close_date": est_close.strftime("%b %d"),
+            "urgency": "High" if days_rem <= 7 else "Normal"
+        })
+    results.sort(key=lambda x: x["days_remaining"])
+    return results
+
+
+
 def get_monthly_storage_comparison() -> list[dict]:
     """Average price per unit size this month vs. last month."""
     cur_start  = datetime.utcnow().replace(day=1).date().isoformat()
@@ -480,6 +515,49 @@ def _build_realtor_listings_section(rows: list) -> str:
     """.format(header=header, body=body_rows)
 
 
+def _build_affiliate_reminders_section(rows: list) -> str:
+    if not rows:
+        return "<p style='color:{};'>No pending deals currently requiring affiliate outreach.</p>".format(TEXT_MUTED)
+
+    header = "<tr>{}</tr>".format("".join(
+        _header_cell(h) for h in ["Realtor Contact", "Property Address", "Price", "30-Day Countdown", "Target Move", "Action"]
+    ))
+    body_rows = ""
+    for r in rows:
+        rem = r.get("days_remaining", 30)
+        if rem <= 7:
+            badge = "<span style='color:#e74c3c;font-weight:700;'>🔴 {}d left (Closing Soon!)</span>".format(rem)
+        elif rem <= 18:
+            badge = "<span style='color:#f39c12;font-weight:700;'>🟡 {}d left (Prime Window)</span>".format(rem)
+        else:
+            badge = "<span style='color:#27ae60;font-weight:600;'>🟢 {}d left</span>".format(rem)
+
+        contact_info = "<strong>{}</strong><br><span style='color:{};font-size:11px;'>{}</span>".format(
+            r.get("realtor_name") or "Realtor", TEXT_MUTED, r.get("realtor_phone") or r.get("realtor_email") or "No phone"
+        )
+        price_str = "${:,.0f}".format(r["list_price"]) if r.get("list_price") else "N/A"
+
+        body_rows += "<tr>{}</tr>".format("".join([
+            _cell(contact_info),
+            _cell("{} ({})".format(r.get("address", ""), r.get("zip_code", ""))),
+            _cell(price_str, color=ACCENT, bold=True),
+            _cell(badge),
+            _cell(r.get("est_close_date", "—")),
+            _cell("<a href='mailto:{}?subject=Around%20Town%20Movers%20-%20Moving%20%26%20Storage%20Support%20for%20{}' style='color:#2eaadc;font-weight:600;text-decoration:none;'>Email Offer</a>".format(
+                r.get("realtor_email") or "", r.get("address", "")
+            ))
+        ]))
+
+    return """
+    <table width='100%' cellpadding='0' cellspacing='0'
+           style='border-collapse:collapse; font-size:13px;'>
+      <thead>{header}</thead>
+      <tbody>{body}</tbody>
+    </table>
+    """.format(header=header, body=body_rows)
+
+
+
 def _build_storage_movement_section(rows: list) -> str:
     if not rows:
         return "<p style='color:{};'>No storage pricing comparison data available.</p>".format(TEXT_MUTED)
@@ -540,6 +618,7 @@ def build_report() -> str:
     monthly_re   = get_monthly_re_comparison()
     new_listings = get_new_realtor_listings()
     storage_move = get_monthly_storage_comparison()
+    affiliates   = get_affiliate_reminders()
 
     re_kpi_html = _kpi_row([
         ("Total Listings",    "{:,}".format(re_kpis.get("total", 0)), BRAND_COLOR),
@@ -559,6 +638,7 @@ def build_report() -> str:
     body = """
     {re_kpi}
     {monthly_re}
+    {affiliates}
     {new_listings}
     {st_kpi}
     {storage_move}
@@ -572,6 +652,8 @@ def build_report() -> str:
                             monthly_re.get("prev_label","Last Month"),
                             monthly_re.get("cur_label","This Month")),
                             _build_monthly_re_section(monthly_re)),
+        affiliates   = _section("🤝 Affiliated Realtor Outreach Reminders (30-Day Under-Contract Pipeline)",
+                                _build_affiliate_reminders_section(affiliates)),
         new_listings = _section("🏠 Latest Realtor Listings", _build_realtor_listings_section(new_listings)),
         st_kpi       = _section("📦 Self-Storage Market Overview", st_kpi_html),
         storage_move = _section("📈 Storage Price Movement (Month over Month)", _build_storage_movement_section(storage_move)),

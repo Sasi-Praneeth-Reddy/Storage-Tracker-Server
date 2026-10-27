@@ -10,12 +10,15 @@ playwright>=1.45.0          # For JS-heavy sites (Public Storage, Extra Space)
 curl_cffi>=0.7.0            # Cloudflare bypass for StorageCafe ETL
 pgeocode>=0.3.0             # Fast offline zip code lookups
 
-# --- Dashboard ---
+# --- API & Dashboard ---
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
 streamlit>=1.35.0
 plotly>=5.20.0
 folium>=0.17.0
 streamlit-folium>=0.20.0
 pandas>=2.2.0               # Use --prefer-binary to avoid compile from source
+
 
 # --- Email ---
 brevo-python>=1.0.0         # Brevo (formerly Sendinblue) SDK
