@@ -44,8 +44,11 @@ def run_collector(name: str, fn, dry_run: bool) -> dict:
             records_written = fn()
             result["records"] = records_written or 0
         elapsed = round(time.time() - start, 2)
-        log.info(f"✅ {name} completed in {elapsed}s — {result['records']} records written")
-        log_scrape(name, "success", result["records"], duration_sec=elapsed)
+        if result["records"] == 0 and not dry_run:
+            log.warning(f"⚠️ {name} finished in {elapsed}s but 0 records were written. Check logs and credentials.")
+        else:
+            log.info(f"✅ {name} completed in {elapsed}s — {result['records']} records written")
+        log_scrape(name, "success" if result["records"] > 0 or dry_run else "zero_records", result["records"], duration_sec=elapsed)
     except Exception as exc:
         elapsed = round(time.time() - start, 2)
         result["status"] = "failed"
