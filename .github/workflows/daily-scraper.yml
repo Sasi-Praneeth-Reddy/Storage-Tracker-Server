@@ -73,3 +73,13 @@ jobs:
             --backend-url "$ATM_SCHEDULER_URL" \
             --api-key "$SECRET_WEBHOOK_KEY" \
             --limit "$LIMIT"
+
+      - name: Upload Debug Screenshots & Logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scraper-debug-artifacts
+          path: |
+            debug_screenshots/
+            collector.log
+          if-no-files-found: ignore

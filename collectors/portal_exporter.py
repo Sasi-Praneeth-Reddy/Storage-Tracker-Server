@@ -51,15 +51,55 @@ TARGET_STATES = ["Virginia", "Maryland", "West Virginia"]
 # ── Login ─────────────────────────────────────────────────────────
 
 async def login(page):
+    if not USAHOMELISTINGS_EMAIL or not USAHOMELISTINGS_PASSWORD:
+        raise ValueError(
+            "USAHOMELISTINGS_EMAIL or USAHOMELISTINGS_PASSWORD is empty! "
+            "Please configure repository secrets in GitHub Actions (Settings -> Secrets and variables -> Actions)."
+        )
+
+    log.info("Navigating to login page: %s", LOGIN_URL)
     await page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=30000)
     await page.wait_for_timeout(2000)
-    await page.fill('input[type="email"]', USAHOMELISTINGS_EMAIL)
+
+    # Fill email
+    try:
+        email_input = await page.wait_for_selector('input[type="email"]', timeout=15000)
+        await email_input.fill(USAHOMELISTINGS_EMAIL)
+        log.info("Filled email address.")
+    except Exception as exc:
+        DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+        await page.screenshot(path=str(DEBUG_DIR / "login_email_selector_failed.png"))
+        raise RuntimeError(f"Could not find email input on {page.url}: {exc}")
+
+    # Submit email step
     await page.click('button[type="submit"]')
-    await page.wait_for_selector('input[type="password"]', timeout=12000)
-    await page.fill('input[type="password"]', USAHOMELISTINGS_PASSWORD)
+    await page.wait_for_timeout(2000)
+
+    # Fill password step
+    try:
+        pw_input = await page.wait_for_selector('input[type="password"]', timeout=15000)
+        await pw_input.fill(USAHOMELISTINGS_PASSWORD)
+        log.info("Filled password.")
+    except Exception as exc:
+        DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+        await page.screenshot(path=str(DEBUG_DIR / "login_pw_selector_failed.png"))
+        raise RuntimeError(f"Could not find password input on {page.url}: {exc}")
+
+    # Submit login form
     await page.click('button[type="submit"]')
     await page.wait_for_timeout(5000)
-    log.info("Logged in: %s", page.url)
+
+    # Verify if login successfully navigated away from /login
+    if "/login" in page.url:
+        DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+        ss_path = DEBUG_DIR / "login_failed_still_on_login.png"
+        await page.screenshot(path=str(ss_path))
+        raise RuntimeError(
+            f"Authentication failed: browser is still on {page.url}. "
+            f"Screenshot saved to {ss_path}. Check credentials, 2FA, or bot challenge."
+        )
+
+    log.info("Successfully logged in! Current URL: %s", page.url)
 
 
 # ── Get the listings iframe ───────────────────────────────────────
@@ -73,6 +113,13 @@ async def get_listings_frame(page):
     """
     await page.goto(LISTINGS_URL, wait_until="networkidle", timeout=45000)
     await page.wait_for_timeout(4000)
+
+    if "/login" in page.url:
+        DEBUG_DIR.mkdir(parents=True, exist_ok=True)
+        await page.screenshot(path=str(DEBUG_DIR / "redirected_to_login.png"))
+        raise RuntimeError(
+            f"Access denied to listings page: redirected back to {page.url}. Session is not authenticated."
+        )
 
     frames = page.frames
     log.info("Total frames on page: %d", len(frames))
@@ -567,6 +614,8 @@ def run(args=None):
     if not args.import_only:
         total = asyncio.run(run_async(args))
         log.info("Downloaded %d CSV file(s).", total)
+        if total == 0:
+            log.warning("⚠️ 0 CSV files downloaded from portal! Check credentials or selectors.")
 
     # Auto-import
     from collectors.csv_importer import run as import_run
