@@ -2,8 +2,10 @@ name: Daily Market & Pre-Mover Scraper
 
 on:
   schedule:
-    # Runs every day at 15:00 UTC (11:00 AM EDT / 10:00 AM EST)
+    # GitHub cron is UTC-only. 11:00 AM New York is 15:00 UTC in summer (EDT) and 16:00 UTC in winter (EST),
+    # so both are scheduled and the "gate" job below lets only the one that lands on 11 AM local time run.
     - cron: '0 15 * * *'
+    - cron: '0 16 * * *'
   workflow_dispatch:
     inputs:
       target:
@@ -21,8 +23,21 @@ on:
         default: '1000'
 
 jobs:
+  gate:
+    name: Check it is 11 AM in New York
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.t.outputs.run }}
+    steps:
+      - id: t
+        run: |
+          H=$(TZ=America/New_York date +%H)
+          if [ "${{ github.event_name }}" != "schedule" ] || [ "$H" = "11" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; else echo "run=false" >> "$GITHUB_OUTPUT"; echo "New York hour is $H - skipping this trigger"; fi
+
   scrape-and-sync:
     name: Run Scrapers and Sync to Scheduler
+    needs: gate
+    if: ${{ needs.gate.outputs.run == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
