@@ -2,6 +2,8 @@ name: Daily Market & Pre-Mover Scraper
 
 on:
   schedule:
+    # The scheduled daily run collects pre-mover LEADS only. Storage prices are collected on demand:
+    # the "Update prices" button in the Scheduler's Storage tab starts this workflow with target=storage.
     # GitHub cron is UTC-only. 11:00 AM New York is 15:00 UTC in summer (EDT) and 16:00 UTC in winter (EST),
     # so both are scheduled and the "gate" job below lets only the one that lands on 11 AM local time run.
     - cron: '0 15 * * *'
@@ -42,6 +44,7 @@ jobs:
     timeout-minutes: 60
 
     env:
+      TARGET: ${{ github.event.inputs.target || 'real_estate' }}
       USAHOMELISTINGS_EMAIL: ${{ secrets.USAHOMELISTINGS_EMAIL }}
       USAHOMELISTINGS_PASSWORD: ${{ secrets.USAHOMELISTINGS_PASSWORD }}
       GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
@@ -75,19 +78,18 @@ jobs:
 
       - name: Execute Scraper Pipeline
         run: |
-          TARGET="${{ github.event.inputs.target || 'all' }}"
           echo "Executing scraper pipeline for target: $TARGET"
           python collectors/run_all.py --target "$TARGET"
 
       - name: Push Storage Prices to ATM Scheduler
-        if: ${{ env.ATM_SCHEDULER_URL != '' && env.SCRAPER_API_KEY != '' && (github.event.inputs.target == '' || github.event.inputs.target == 'all' || github.event.inputs.target == 'storage') }}
+        if: ${{ env.ATM_SCHEDULER_URL != '' && env.SCRAPER_API_KEY != '' && (env.TARGET == 'all' || env.TARGET == 'storage') }}
         run: |
           python collectors/sync_storage_to_scheduler.py \
             --backend-url "$ATM_SCHEDULER_URL" \
             --api-key "$SCRAPER_API_KEY"
 
       - name: Push Leads to ATM Scheduler
-        if: ${{ env.ATM_SCHEDULER_URL != '' && env.SCRAPER_API_KEY != '' && (github.event.inputs.target == '' || github.event.inputs.target == 'all' || github.event.inputs.target == 'real_estate') }}
+        if: ${{ env.ATM_SCHEDULER_URL != '' && env.SCRAPER_API_KEY != '' && (env.TARGET == 'all' || env.TARGET == 'real_estate') }}
         run: |
           LIMIT="${{ github.event.inputs.limit || '1000' }}"
           python collectors/sync_leads_to_scheduler.py \
