@@ -2,8 +2,8 @@ name: Daily Market & Pre-Mover Scraper
 
 on:
   schedule:
-    # Runs every day at 11:00 UTC (7:00 AM EDT / 6:00 AM EST)
-    - cron: '0 11 * * *'
+    # Runs every day at 15:00 UTC (11:00 AM EDT / 10:00 AM EST)
+    - cron: '0 15 * * *'
   workflow_dispatch:
     inputs:
       target:
