@@ -1,5 +1,8 @@
 name: Daily Market & Pre-Mover Scraper
 
+# The run title tells the Scheduler's "Update prices" button which runs are storage scrapes.
+run-name: Scraper (${{ github.event_name == 'schedule' && 'real_estate' || github.event.inputs.target || 'all' }})
+
 on:
   schedule:
     # The scheduled daily run collects pre-mover LEADS only. Storage prices are collected on demand:
