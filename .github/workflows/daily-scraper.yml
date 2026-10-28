@@ -1,7 +1,7 @@
 name: Daily Market & Pre-Mover Scraper
 
 # The run title tells the Scheduler's "Update prices" button which runs are storage scrapes.
-run-name: Scraper (${{ github.event_name == 'schedule' && 'real_estate' || github.event.inputs.target || 'all' }})
+run-name: Scraper (${{ github.event_name == 'schedule' && 'real_estate' || github.event.inputs.target || 'real_estate' }})
 
 on:
   schedule:
@@ -14,9 +14,9 @@ on:
   workflow_dispatch:
     inputs:
       target:
-        description: 'Scraper collection target'
+        description: 'Scraper collection target (storage = StorageCafe prices, real_estate = USAHomeListings leads)'
         required: true
-        default: 'all'
+        default: 'real_estate'
         type: choice
         options:
           - all
