@@ -42,7 +42,7 @@ def fetch_local_leads(limit=50000):
             SELECT
                 id, address, city, state, zip_code, county, status,
                 list_price, bedrooms, bathrooms, sqft, is_vacant,
-                listed_date, first_name, last_name, owner_full_name,
+                listed_date, scraped_at, first_name, last_name, owner_full_name,
                 email, phone, realtor_name, realtor_phone, realtor_email,
                 broker_name
             FROM pre_mover_leads
@@ -79,7 +79,7 @@ def sync_to_scheduler(backend_url, leads, api_key=None):
             "bathrooms": l.get("bathrooms"),
             "sqft": l.get("sqft"),
             "isVacant": bool(l.get("is_vacant")),
-            "listedDate": l.get("listed_date"),
+            "listedDate": (l.get("listed_date") or (l.get("scraped_at") or "")[:10] or None),
             "firstName": l.get("first_name") or "",
             "lastName": l.get("last_name") or "",
             "ownerFullName": l.get("owner_full_name") or "",
