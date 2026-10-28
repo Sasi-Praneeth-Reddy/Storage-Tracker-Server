@@ -33,7 +33,7 @@ jobs:
       RENTCAST_API_KEY: ${{ secrets.RENTCAST_API_KEY }}
       BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
       ATM_SCHEDULER_URL: ${{ secrets.ATM_SCHEDULER_URL }}
-      SECRET_WEBHOOK_KEY: ${{ secrets.SECRET_WEBHOOK_KEY }}
+      SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY }}
 
     steps:
       - name: Checkout Code
@@ -64,14 +64,20 @@ jobs:
           echo "Executing scraper pipeline for target: $TARGET"
           python collectors/run_all.py --target "$TARGET"
 
-      - name: Push Leads to ATM Scheduler (Firestore)
-        if: ${{ env.ATM_SCHEDULER_URL != '' }}
+      - name: Push Storage Prices to ATM Scheduler
+        if: ${{ env.ATM_SCHEDULER_URL != '' && env.SCRAPER_API_KEY != '' && (github.event.inputs.target == '' || github.event.inputs.target == 'all' || github.event.inputs.target == 'storage') }}
+        run: |
+          python collectors/sync_storage_to_scheduler.py \
+            --backend-url "$ATM_SCHEDULER_URL" \
+            --api-key "$SCRAPER_API_KEY"
+
+      - name: Push Leads to ATM Scheduler
+        if: ${{ env.ATM_SCHEDULER_URL != '' && env.SCRAPER_API_KEY != '' && (github.event.inputs.target == '' || github.event.inputs.target == 'all' || github.event.inputs.target == 'real_estate') }}
         run: |
           LIMIT="${{ github.event.inputs.limit || '1000' }}"
-          echo "Pushing freshly scraped leads to $ATM_SCHEDULER_URL..."
           python collectors/sync_leads_to_scheduler.py \
             --backend-url "$ATM_SCHEDULER_URL" \
-            --api-key "$SECRET_WEBHOOK_KEY" \
+            --api-key "$SCRAPER_API_KEY" \
             --limit "$LIMIT"
 
       - name: Upload Debug Screenshots & Logs

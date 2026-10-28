@@ -2,7 +2,8 @@
 collectors/sync_leads_to_scheduler.py
 
 Bridges scraped USA Home Listings from the local SQLite database to the
-ATM Scheduler backend (Firebase/Firestore) via POST /api/leads/ingest.
+ATM Scheduler backend (stored in Firebase SQL Connect) via POST /api/leads/ingest.
+Sends in chunks and exits non-zero on failure so the GitHub Actions run is flagged.
 
 Usage:
     python collectors/sync_leads_to_scheduler.py --backend-url http://localhost:8787
@@ -29,6 +30,7 @@ logging.basicConfig(
 )
 
 DEFAULT_BACKEND = "http://localhost:8787"
+CHUNK = 200
 
 
 def fetch_local_leads(limit=1000):
@@ -62,7 +64,7 @@ def sync_to_scheduler(backend_url, leads, api_key=None):
     url = f"{backend_url.rstrip('/')}/api/leads/ingest"
     log.info(f"Syncing {len(leads)} leads to {url}...")
 
-    # Normalize fields for Firestore leads schema
+    # Normalize fields for the Scheduler leads schema
     payload_leads = []
     for l in leads:
         payload_leads.append({
@@ -89,44 +91,46 @@ def sync_to_scheduler(backend_url, leads, api_key=None):
             "brokerName": l.get("broker_name") or "",
         })
 
-    data = json.dumps({"leads": payload_leads}).encode("utf-8")
     headers = {"Content-Type": "application/json"}
-    key = api_key or os.environ.get("SCHEDULER_API_KEY") or os.environ.get("SECRET_WEBHOOK_KEY")
-    if key:
-        headers["x-api-key"] = key
+    key = api_key or os.environ.get("SCRAPER_API_KEY") or os.environ.get("SECRET_WEBHOOK_KEY")
+    if not key:
+        log.error("No API key (use --api-key or SCRAPER_API_KEY).")
+        return None
+    headers["x-api-key"] = key
 
-    req = urllib.request.Request(
-        url,
-        data=data,
-        headers=headers,
-        method="POST"
-    )
-
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
-            log.info(f"Sync successful: {body}")
-            return body.get("total", len(payload_leads))
-    except urllib.error.HTTPError as e:
-        log.error(f"Sync failed with HTTP {e.code}: {e.read().decode('utf-8')}")
-        return 0
-    except Exception as e:
-        log.error(f"Sync request failed: {e}")
-        return 0
+    total = 0
+    for i in range(0, len(payload_leads), CHUNK):
+        data = json.dumps({"leads": payload_leads[i:i + CHUNK]}).encode("utf-8")
+        req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
+                total += body.get("total", body.get("count", min(CHUNK, len(payload_leads) - i)))
+                log.info(f"  chunk {i // CHUNK + 1}: {body}")
+        except urllib.error.HTTPError as e:
+            log.error(f"Sync failed with HTTP {e.code}: {e.read().decode('utf-8', errors='replace')[:300]}")
+            return None
+        except Exception as e:
+            log.error(f"Sync request failed: {e}")
+            return None
+    return total
 
 
 def main():
     parser = argparse.ArgumentParser(description="Sync USA Home Listings to ATM Scheduler")
     parser.add_argument("--backend-url", default=DEFAULT_BACKEND, help="Base URL of ATM Scheduler backend")
-    parser.add_argument("--api-key", default=None, help="API / Webhook secret key for authorization")
+    parser.add_argument("--api-key", default=None, help="Scraper API key (SCRAPER_API_KEY)")
     parser.add_argument("--limit", type=int, default=1000, help="Max leads to fetch from local SQLite")
     args = parser.parse_args()
 
     leads = fetch_local_leads(args.limit)
     log.info(f"Loaded {len(leads)} leads from local SQLite database.")
     synced = sync_to_scheduler(args.backend_url, leads, api_key=args.api_key)
+    if synced is None:
+        return 1
     log.info(f"Done. {synced} leads synced.")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
