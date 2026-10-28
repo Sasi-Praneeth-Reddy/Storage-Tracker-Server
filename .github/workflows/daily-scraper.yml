@@ -42,6 +42,8 @@ jobs:
     if: ${{ needs.gate.outputs.run == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    permissions:
+      contents: write   # lets the run commit the dated storage-price CSV back to the repo
 
     env:
       TARGET: ${{ github.event.inputs.target || 'real_estate' }}
@@ -81,6 +83,17 @@ jobs:
         run: |
           echo "Executing scraper pipeline for target: $TARGET"
           python collectors/run_all.py --target "$TARGET"
+
+      - name: Save Storage Prices CSV to the repo (prices only - never leads)
+        if: ${{ env.TARGET == 'all' || env.TARGET == 'storage' }}
+        run: |
+          python collectors/sync_storage_to_scheduler.py --export-csv data/storage_prices
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/storage_prices
+          git diff --cached --quiet || git commit -m "Storage prices $(date -u +%F)"
+          git pull --rebase --autostash || true
+          git push || echo "Could not push the CSV (the upload to the Scheduler is unaffected)"
 
       - name: Push Storage Prices to ATM Scheduler
         if: ${{ env.ATM_SCHEDULER_URL != '' && env.SCRAPER_API_KEY != '' && (env.TARGET == 'all' || env.TARGET == 'storage') }}

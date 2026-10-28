@@ -18,8 +18,15 @@ overwrites instead of duplicating.
 By default only the CHEAPEST rate per facility + unit size is sent (that is all the Market tab uses),
 which keeps the database small as history accumulates daily. Use --all-units to send every unit row.
 
+CSV support (prices are public competitor data, so a dated CSV is safe to keep in the repo):
+    --export-csv data/storage_prices   write today's facilities + prices to <dir>/storage_prices_<date>.csv
+    --csv <file>                       upload a CSV in that same format instead of reading the SQLite database
+                                       (use this to load prices you collected by hand)
+
 Usage:
     python collectors/sync_storage_to_scheduler.py --backend-url https://<scheduler-host> --api-key <SCRAPER_API_KEY>
+    python collectors/sync_storage_to_scheduler.py --export-csv data/storage_prices
+    python collectors/sync_storage_to_scheduler.py --csv data/storage_prices/storage_prices_2026-10-28.csv --backend-url ...
     python collectors/sync_storage_to_scheduler.py --dry-run
 """
 
@@ -27,8 +34,10 @@ import sys
 import os
 import json
 import time
+import datetime
 import logging
 import argparse
+import csv
 import pathlib
 import urllib.request
 import urllib.error
@@ -101,6 +110,78 @@ def fetch_pricing(conn, all_units=False):
     return out, day
 
 
+CSV_COLUMNS = [
+    "google_place_id", "name", "brand", "address", "city", "state", "zip_code", "lat", "lon", "phone", "website",
+    "unit_size", "unit_type", "street_rate", "web_rate", "availability", "source", "scraped_at",
+]
+
+
+def export_csv(directory, facilities, pricing, day):
+    """One row per facility + unit size. Facilities without a price are still listed (unit columns blank)."""
+    by_id = {f["googlePlaceId"]: f for f in facilities}
+    out = pathlib.Path(directory)
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / f"storage_prices_{day}.csv"
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=CSV_COLUMNS)
+        w.writeheader()
+        priced = set()
+        for p in pricing:
+            f = by_id.get(p["facilityId"], {})
+            priced.add(p["facilityId"])
+            w.writerow({
+                "google_place_id": p["facilityId"], "name": f.get("name"), "brand": f.get("brand"), "address": f.get("address"),
+                "city": f.get("city"), "state": f.get("state"), "zip_code": f.get("zipCode"), "lat": f.get("lat"), "lon": f.get("lon"),
+                "phone": f.get("phone"), "website": f.get("website"), "unit_size": p["unitSize"], "unit_type": p["unitType"],
+                "street_rate": p["streetRate"], "web_rate": p["webRate"], "availability": p["availability"],
+                "source": p["source"], "scraped_at": p["scrapedAt"],
+            })
+        for fid, f in by_id.items():
+            if fid not in priced:
+                w.writerow({"google_place_id": fid, "name": f.get("name"), "brand": f.get("brand"), "address": f.get("address"),
+                            "city": f.get("city"), "state": f.get("state"), "zip_code": f.get("zipCode"), "lat": f.get("lat"),
+                            "lon": f.get("lon"), "phone": f.get("phone"), "website": f.get("website")})
+    return path
+
+
+def _num(v):
+    try:
+        return float(v) if v not in (None, "") else None
+    except ValueError:
+        return None
+
+
+def load_csv(path):
+    """Read a CSV in the export format back into (facilities, pricing, day)."""
+    facilities, pricing, seen, counts = [], [], set(), {}
+    day = None
+    with open(path, newline="", encoding="utf-8-sig") as fh:
+        for r in csv.DictReader(fh):
+            fid = (r.get("google_place_id") or "").strip()
+            if not fid:
+                continue
+            if fid not in seen:
+                seen.add(fid)
+                facilities.append({
+                    "googlePlaceId": fid, "name": r.get("name"), "brand": r.get("brand"), "address": r.get("address"),
+                    "city": r.get("city"), "state": r.get("state"), "zipCode": r.get("zip_code"), "lat": _num(r.get("lat")),
+                    "lon": _num(r.get("lon")), "phone": r.get("phone"), "website": r.get("website"),
+                })
+            size = (r.get("unit_size") or "").strip()
+            if not size:
+                continue
+            at = r.get("scraped_at") or datetime.date.today().isoformat()
+            day = day or at[:10]
+            n = counts.get((fid, size), 0)
+            counts[(fid, size)] = n + 1
+            pricing.append({
+                "facilityId": fid, "unitSize": size, "unitType": r.get("unit_type"), "streetRate": _num(r.get("street_rate")),
+                "webRate": _num(r.get("web_rate")), "availability": r.get("availability"), "source": r.get("source") or "csv",
+                "scrapedAt": at, "snapshotKey": f"{size}_{n}_{at[:10]}",
+            })
+    return facilities, pricing, day
+
+
 def post(url, payload, key, retries=3):
     data = json.dumps(payload).encode("utf-8")
     headers = {"Content-Type": "application/json", "x-api-key": key}
@@ -137,20 +218,29 @@ def main():
     ap.add_argument("--backend-url", default=os.environ.get("ATM_SCHEDULER_URL"), help="Base URL of the ATM Scheduler")
     ap.add_argument("--api-key", default=os.environ.get("SCRAPER_API_KEY"), help="Scraper API key (SCRAPER_API_KEY)")
     ap.add_argument("--all-units", action="store_true", help="Send every unit row, not just the cheapest per size")
+    ap.add_argument("--export-csv", metavar="DIR", help="Write facilities + prices to DIR/storage_prices_<date>.csv")
+    ap.add_argument("--csv", metavar="FILE", help="Upload this CSV (export format) instead of reading the SQLite database")
     ap.add_argument("--dry-run", action="store_true", help="Show what would be sent and exit")
     args = ap.parse_args()
 
-    conn = get_connection()
-    try:
-        facilities = fetch_facilities(conn)
-        pricing, day = fetch_pricing(conn, args.all_units)
-    finally:
-        conn.close()
+    if args.csv:
+        facilities, pricing, day = load_csv(args.csv)
+    else:
+        conn = get_connection()
+        try:
+            facilities = fetch_facilities(conn)
+            pricing, day = fetch_pricing(conn, args.all_units)
+        finally:
+            conn.close()
 
-    log.info(f"Local SQLite: {len(facilities)} facilities, {len(pricing)} pricing rows for {day}.")
+    log.info(f"Loaded: {len(facilities)} facilities, {len(pricing)} pricing rows for {day}.")
     if not facilities or not pricing:
         log.error("Nothing to sync - the storage scrape produced no facilities/prices. Failing so the run is flagged.")
         return 1
+    if args.export_csv:
+        path = export_csv(args.export_csv, facilities, pricing, day)
+        log.info(f"Wrote {path}")
+        return 0  # exporting is its own step; run again without --export-csv to upload
     if args.dry_run:
         log.info("Dry run - nothing sent.")
         return 0
