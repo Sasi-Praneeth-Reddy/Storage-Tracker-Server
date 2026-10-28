@@ -52,6 +52,7 @@ jobs:
       BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
       ATM_SCHEDULER_URL: ${{ secrets.ATM_SCHEDULER_URL }}
       SCRAPER_API_KEY: ${{ secrets.SCRAPER_API_KEY }}
+      STORAGE_PROXY_URL: ${{ secrets.STORAGE_PROXY_URL }}
 
     steps:
       - name: Checkout Code

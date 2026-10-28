@@ -41,6 +41,7 @@ def get_free_proxies() -> list:
     return []
 
 free_proxies_list = []
+STORAGE_PROXY_URL = (os.environ.get('STORAGE_PROXY_URL') or '').strip()  # e.g. http://user:pass@host:port
 
 async def fetch_zip(zip_code, session, sem, today_str):
     global free_proxies_list
@@ -61,7 +62,12 @@ async def fetch_zip(zip_code, session, sem, today_str):
         
         while retries < max_retries:
             proxy_url = None
-            if retries > 0 and free_proxies_list:
+            if STORAGE_PROXY_URL:
+                # A paid / residential proxy (secret STORAGE_PROXY_URL) is used for every request: StorageCafe
+                # blocks GitHub's datacenter IPs, and free public proxies are too unreliable to depend on.
+                proxy_url = STORAGE_PROXY_URL
+                print(f"[{zip_code}] Fetching {url} (configured proxy{', retry ' + str(retries) if retries else ''})")
+            elif retries > 0 and free_proxies_list:
                 proxy_host = random.choice(free_proxies_list)
                 proxy_url = f"http://{proxy_host}"
                 print(f"[{zip_code}] Fetching {url} (Retry {retries}, Proxy: {proxy_url})")
@@ -89,7 +95,7 @@ async def fetch_zip(zip_code, session, sem, today_str):
 
 async def fetch_all():
     global free_proxies_list
-    free_proxies_list = get_free_proxies()
+    free_proxies_list = [] if STORAGE_PROXY_URL else get_free_proxies()
     today_str = date.today().isoformat()
     sem = asyncio.Semaphore(5)
     
