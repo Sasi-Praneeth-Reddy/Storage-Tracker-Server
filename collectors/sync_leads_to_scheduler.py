@@ -33,7 +33,7 @@ DEFAULT_BACKEND = "http://localhost:8787"
 CHUNK = 200
 
 
-def fetch_local_leads(limit=1000):
+def fetch_local_leads(limit=50000):
     """Retrieve pre_mover_leads from local SQLite database."""
     conn = get_connection()
     try:
@@ -120,7 +120,7 @@ def main():
     parser = argparse.ArgumentParser(description="Sync USA Home Listings to ATM Scheduler")
     parser.add_argument("--backend-url", default=DEFAULT_BACKEND, help="Base URL of ATM Scheduler backend")
     parser.add_argument("--api-key", default=None, help="Scraper API key (SCRAPER_API_KEY)")
-    parser.add_argument("--limit", type=int, default=1000, help="Max leads to fetch from local SQLite")
+    parser.add_argument("--limit", type=int, default=50000, help="Max leads to fetch from local SQLite")
     args = parser.parse_args()
 
     leads = fetch_local_leads(args.limit)

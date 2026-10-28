@@ -22,7 +22,7 @@ on:
       limit:
         description: 'Max leads to push to ATM Scheduler'
         required: false
-        default: '1000'
+        default: '50000'
 
 jobs:
   gate:
@@ -92,7 +92,7 @@ jobs:
       - name: Push Leads to ATM Scheduler
         if: ${{ env.ATM_SCHEDULER_URL != '' && env.SCRAPER_API_KEY != '' && (env.TARGET == 'all' || env.TARGET == 'real_estate') }}
         run: |
-          LIMIT="${{ github.event.inputs.limit || '1000' }}"
+          LIMIT="${{ github.event.inputs.limit || '50000' }}"
           python collectors/sync_leads_to_scheduler.py \
             --backend-url "$ATM_SCHEDULER_URL" \
             --api-key "$SCRAPER_API_KEY" \
