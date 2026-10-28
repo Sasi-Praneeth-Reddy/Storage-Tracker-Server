@@ -51,4 +51,9 @@ frontend/dist/
 .scraper_pid
 debug_screenshots/
 
-
+# Scraped data stays out of git: lead CSVs contain homeowner names/emails/phones and the repo is public.
+# (Only data/storage_prices/ - public competitor prices - is committed on purpose.)
+data/imports/
+data/raw/
+*.csv
+!data/storage_prices/*.csv

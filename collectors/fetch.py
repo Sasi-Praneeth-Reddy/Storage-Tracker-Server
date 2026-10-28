@@ -41,6 +41,9 @@ def get_free_proxies() -> list:
     return []
 
 free_proxies_list = []
+DIRECT_ATTEMPTS = 3      # tries without a proxy (with growing pauses) before falling back to free proxies
+BACKOFF_SECONDS = 8
+STORAGE_PROXY_URL = (os.environ.get('STORAGE_PROXY_URL') or '').strip()  # e.g. http://user:pass@host:port
 
 async def fetch_zip(zip_code, session, sem, today_str):
     global free_proxies_list
@@ -57,11 +60,16 @@ async def fetch_zip(zip_code, session, sem, today_str):
 
     async with sem:
         retries = 0
-        max_retries = 4
+        max_retries = DIRECT_ATTEMPTS + 3
         
         while retries < max_retries:
             proxy_url = None
-            if retries > 0 and free_proxies_list:
+            if STORAGE_PROXY_URL:
+                # A paid / residential proxy (secret STORAGE_PROXY_URL) is used for every request: StorageCafe
+                # blocks GitHub's datacenter IPs, and free public proxies are too unreliable to depend on.
+                proxy_url = STORAGE_PROXY_URL
+                print(f"[{zip_code}] Fetching {url} (configured proxy{', retry ' + str(retries) if retries else ''})")
+            elif retries >= DIRECT_ATTEMPTS and free_proxies_list:
                 proxy_host = random.choice(free_proxies_list)
                 proxy_url = f"http://{proxy_host}"
                 print(f"[{zip_code}] Fetching {url} (Retry {retries}, Proxy: {proxy_url})")
@@ -76,7 +84,8 @@ async def fetch_zip(zip_code, session, sem, today_str):
                     key_path.write_bytes(r.content)
                     break # success
                 elif r.status_code == 403:
-                    print(f"[{zip_code}] Blocked (403). Rotating proxy...")
+                    print(f"[{zip_code}] Blocked (403). Backing off, then retrying...")
+                    await asyncio.sleep(BACKOFF_SECONDS * (retries + 1))  # StorageCafe rate-limits bursts; pausing often clears it
                 else:
                     print(f"[{zip_code}] HTTP {r.status_code}")
             except Exception as e:
@@ -89,13 +98,23 @@ async def fetch_zip(zip_code, session, sem, today_str):
 
 async def fetch_all():
     global free_proxies_list
-    free_proxies_list = get_free_proxies()
+    free_proxies_list = [] if STORAGE_PROXY_URL else get_free_proxies()
     today_str = date.today().isoformat()
-    sem = asyncio.Semaphore(5)
+    sem = asyncio.Semaphore(2)  # gentle: bursts of 5 got blocked from GitHub's servers
     
     async with AsyncSession() as session:
         tasks = [fetch_zip(z, session, sem, today_str) for z in STORAGE_ZIP_CODES]
         await asyncio.gather(*tasks)
+
+        # Second pass for any ZIP that never came back (fetch_zip skips ZIPs already saved today).
+        done = lambda z: (RAW_DIR / "storagecafe" / today_str / f"{z}.html").exists()
+        missing = [z for z in STORAGE_ZIP_CODES if not done(z) and all(get_city_state(z))]
+        if missing:
+            print(f"Second pass for {len(missing)} ZIPs that were blocked; pausing 45s first...")
+            await asyncio.sleep(45)
+            await asyncio.gather(*[fetch_zip(z, session, sem, today_str) for z in missing])
+        still = [z for z in STORAGE_ZIP_CODES if not done(z) and all(get_city_state(z))]
+        print(f"StorageCafe fetch finished: {len(STORAGE_ZIP_CODES) - len(still)} ZIP pages saved, {len(still)} missing.")
 
 if __name__ == "__main__":
     asyncio.run(fetch_all())

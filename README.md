@@ -206,3 +206,18 @@ Built with Streamlit. Features:
 - **Brevo Email Rejections**: Verify that `EMAIL_FROM_ADDRESS` is an authenticated sender in your Brevo dashboard.
 - **Database Locks**: If you see `sqlite3.OperationalError: database is locked`, ensure only one scraper process is writing at a time.
 - **Animation still showing after scrape**: Click the **🔄 Refresh** button on the dashboard — Streamlit does not auto-refresh when background tasks finish.
+
+## How the daily job works (ATM Scheduler hookup)
+
+Workflow: `.github/workflows/daily-scraper.yml`. Results go to the ATM Scheduler website (Firebase SQL Connect), not to GitHub.
+
+| What | When | Target | Where it ends up |
+|---|---|---|---|
+| Pre-mover leads (USAHomeListings) | Every day, 11:00 AM New York time (two UTC cron entries + a gate job handle daylight saving). Scheduled runs only start from `main`. | `real_estate` | `POST /api/leads/ingest` -> `Lead` table |
+| Storage prices (StorageCafe) | On demand only: the **Update prices** button on the Scheduler's Storage tab, or *Run workflow* with target `storage` | `storage` | `POST /api/storage/facilities/bulk` + `/pricing/bulk`, then `/summary/refresh` |
+
+* Uploads authenticate with the `x-api-key` header = repo secret `SCRAPER_API_KEY` (same value as the Firebase secret `SCRAPER_API_KEY`). `ATM_SCHEDULER_URL` is the site's base URL.
+* A run now **fails** if a scrape comes back empty or an upload is rejected - a green check means the data really arrived.
+* StorageCafe blocks bursts from GitHub's servers. The fetch is paced, backs off on 403, and makes a second pass. If it still comes back empty, set the optional secret `STORAGE_PROXY_URL` (a paid proxy, `http://user:pass@host:port`).
+* Each storage run also saves `data/storage_prices/storage_prices_<date>.csv` into this repo (public competitor prices only). **Lead data is never committed** - this repo is public and leads hold homeowner names, emails and phone numbers (see `.gitignore`).
+* Load prices by hand: `python collectors/sync_storage_to_scheduler.py --csv <file> --backend-url <site> --api-key <key>` (same columns as the saved CSV).
