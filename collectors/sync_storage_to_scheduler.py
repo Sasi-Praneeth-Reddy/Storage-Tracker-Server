@@ -165,6 +165,12 @@ def main():
         log.error(str(e))
         return 1
 
+    try:  # rebuild the Market tab's saved summary so page loads stay instant
+        r = post(f"{args.backend_url.rstrip('/')}/api/storage/summary/refresh", {}, args.api_key)
+        log.info(f"Summary refreshed: {r}")
+    except Exception as e:
+        log.warning(f"Summary refresh failed (the site will recompute on its next first load): {e}")
+
     log.info(f"Synced {f_ok} facilities and {p_ok} pricing rows ({p_skipped} skipped: unknown facility).")
     if p_ok == 0 or p_skipped > len(pricing) * 0.05:
         log.error("Too many pricing rows were rejected - check facility ids.")
