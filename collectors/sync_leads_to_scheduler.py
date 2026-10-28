@@ -113,6 +113,14 @@ def sync_to_scheduler(backend_url, leads, api_key=None):
         except Exception as e:
             log.error(f"Sync request failed: {e}")
             return None
+
+    # Rebuild the Leads charts once, after the last batch (not per batch). Non-fatal if it fails.
+    try:
+        req = urllib.request.Request(f"{backend_url.rstrip('/')}/api/leads/analytics/refresh", data=b"{}", headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=180) as resp:
+            log.info(f"Charts refreshed: {resp.read().decode('utf-8')[:200]}")
+    except Exception as e:
+        log.warning(f"Chart refresh failed (the site rebuilds them on its next first view): {e}")
     return total
 
 
