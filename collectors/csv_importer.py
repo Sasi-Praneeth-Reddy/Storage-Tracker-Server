@@ -638,7 +638,12 @@ def find_csv_files(specific_file: str = None) -> list[pathlib.Path]:
     found = []
     for search_dir in [DOWNLOADS_DIR, PROJECT_DATA_DIR]:
         if search_dir.exists():
-            csvs = sorted(search_dir.rglob("*.csv"))
+            # One-day files (exact date) go first, wide-range files after: the first file to contain a lead
+            # fixes its scraped_at, so the most precise date must win.
+            csvs = sorted(
+                search_dir.rglob("*.csv"),
+                key=lambda p: (bool(re.search(r"\d{4}-\d{2}-\d{2}_to_\d{4}-\d{2}-\d{2}", p.name)), str(p)),
+            )
             if csvs:
                 log.info("Found %d CSV(s) in %s", len(csvs), search_dir)
                 found.extend(csvs)

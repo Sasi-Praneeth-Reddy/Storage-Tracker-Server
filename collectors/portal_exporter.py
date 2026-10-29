@@ -20,6 +20,7 @@ Run:
 """
 
 import asyncio
+import os
 import sys
 import re
 import pathlib
@@ -381,8 +382,41 @@ async def export_by_state_chunked(page, frame, context, state_name: str) -> int:
 
     exported = 0
     today = datetime.now()
-    
-    # We want 30 days back from today, in 5-day chunks
+    safe_state = state_name.replace(" ", "_")
+
+    # ── Phase 1: the most recent days, ONE DAY PER FILE ──────────────────────────────
+    # The portal's CSV has no date column, so the only date we know for a listing is the filter window we
+    # asked for. A one-day window gives an exact date; a 5-day window only gives "somewhere in these 5 days".
+    # These files are named <State>_<YYYY-MM-DD>.csv and the importer reads them BEFORE the range files,
+    # so a brand-new listing is dated with its true day. Always re-downloaded: a recent day can still grow.
+    daily_days = int(os.environ.get("PORTAL_DAILY_DAYS", "3"))
+    for d in range(daily_days):
+        day_str = (today - timedelta(days=d)).strftime("%Y-%m-%d")
+        day_path = IMPORT_DIR / safe_state / "{}_{}.csv".format(safe_state, day_str)
+        if day_path.exists():
+            day_path.unlink()
+        await frame.evaluate(f"""() => {{
+            if (typeof app !== 'undefined' && app.selectedDates) {{
+                app.selectedDates.start = '{day_str} 00:00';
+                app.selectedDates.end = '{day_str} 23:59:59';
+                app.search();
+            }}
+        }}""")
+        await frame.wait_for_timeout(1000)
+        day_count = await click_update_results(frame)
+        log.info("  Daily file %s (%s): %d listings", state_name, day_str, day_count)
+        if day_count == 0:
+            continue
+        if await do_export(page, frame, context, day_path, timeout_ms=120000):
+            exported += 1
+            log.info("    Saved: %s", day_path.name)
+        else:
+            log.warning("    Export failed for day %s", day_str)
+        await asyncio.sleep(2)
+
+    # ── Phase 2: 30-day sweep (status / price changes on leads we already know) ──────
+    # Listing dates are NOT taken from these files for known leads (the server keeps the stored date); they
+    # only refresh status, price, vacancy and contacts. Leads first seen here get the window's end date.
     for i in range(7):
         end_date = today - timedelta(days=i*5)
         start_date = today - timedelta(days=(i+1)*5 - 1)
@@ -392,7 +426,6 @@ async def export_by_state_chunked(page, frame, context, state_name: str) -> int:
         
         log.info("  Processing chunk %d: %s to %s", i+1, start_str, end_str)
         
-        safe_state = state_name.replace(" ", "_")
         save_path = IMPORT_DIR / safe_state / "{}_{}_to_{}.csv".format(safe_state, start_str, end_str)
         
         if save_path.exists() and save_path.stat().st_size > 0:
