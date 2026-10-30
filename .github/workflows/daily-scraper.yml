@@ -8,7 +8,8 @@ on:
     # The scheduled daily run collects pre-mover LEADS only. Storage prices are collected on demand:
     # the "Update prices" button in the Scheduler's Storage tab starts this workflow with target=storage.
     # GitHub cron is UTC-only. 11:00 AM New York is 15:00 UTC in summer (EDT) and 16:00 UTC in winter (EST),
-    # so both are scheduled and the "gate" job below lets only the one that lands on 11 AM local time run.
+    # so both are scheduled. GitHub frequently starts cron runs hours late, so the "gate" job below runs the scrape
+    # once per New York day, the first time a trigger arrives at or after 11:00 AM local time.
     - cron: '0 15 * * *'
     - cron: '0 16 * * *'
   workflow_dispatch:
@@ -29,15 +30,35 @@ on:
 
 jobs:
   gate:
-    name: Check it is 11 AM in New York
+    name: Decide whether today's scheduled scrape should run
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
     outputs:
       run: ${{ steps.t.outputs.run }}
     steps:
       - id: t
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
         run: |
+          # Manual runs always go. Scheduled runs: GitHub often starts cron jobs HOURS late, so "is it exactly
+          # 11 AM" is the wrong test. Instead: run once per New York day, as soon as it is 11:00 AM or later.
+          if [ "$EVENT" != "schedule" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
           H=$(TZ=America/New_York date +%H)
-          if [ "${{ github.event_name }}" != "schedule" ] || [ "$H" = "11" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; else echo "run=false" >> "$GITHUB_OUTPUT"; echo "New York hour is $H - skipping this trigger"; fi
+          TODAY=$(TZ=America/New_York date +%F)
+          if [ "$((10#$H))" -lt 11 ]; then
+            echo "New York hour is $H - before 11 AM, skipping this trigger"; echo "run=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # Already scraped today? Look at today's other scheduled runs for a scrape job that ran or is running.
+          DONE=0
+          for id in $(gh api "repos/$REPO/actions/runs?event=schedule&per_page=20" --jq ".workflow_runs[] | select(.id != $RUN_ID) | select(.created_at >= \"${TODAY}T04:00:00Z\") | .id"); do
+            n=$(gh api "repos/$REPO/actions/runs/$id/jobs" --jq '[.jobs[] | select(.name | startswith("Run Scrapers")) | select(.conclusion != "skipped")] | length')
+            if [ "${n:-0}" -gt 0 ]; then DONE=1; fi
+          done
+          if [ "$DONE" = "1" ]; then echo "Already scraped today - skipping"; echo "run=false" >> "$GITHUB_OUTPUT"; else echo "run=true" >> "$GITHUB_OUTPUT"; fi
 
   scrape-and-sync:
     name: Run Scrapers and Sync to Scheduler
