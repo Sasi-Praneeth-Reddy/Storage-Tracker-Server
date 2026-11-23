@@ -1,4 +1,4 @@
-﻿# 📦 Market Tracking Dashboard (Real Estate & Self-Storage)
+# 📦 Market Tracking Dashboard (Real Estate & Self-Storage)
 
 A fully automated, dual-purpose data tracking system and dashboard. It tracks **Self-Storage pricing & availability** alongside **MLS Real Estate / Pre-Mover activity** across Northern Virginia, Washington DC, and neighboring Maryland.
 
@@ -221,3 +221,12 @@ Workflow: `.github/workflows/daily-scraper.yml`. Results go to the ATM Scheduler
 * StorageCafe blocks bursts from GitHub's servers. The fetch is paced, backs off on 403, and makes a second pass. If it still comes back empty, set the optional secret `STORAGE_PROXY_URL` (a paid proxy, `http://user:pass@host:port`).
 * Each storage run also saves `data/storage_prices/storage_prices_<date>.csv` into this repo (public competitor prices only). **Lead data is never committed** - this repo is public and leads hold homeowner names, emails and phone numbers (see `.gitignore`).
 * Load prices by hand: `python collectors/sync_storage_to_scheduler.py --csv <file> --backend-url <site> --api-key <key>` (same columns as the saved CSV).
+
+---
+
+## 📄 License & Copyright
+
+Copyright © 2026 Sasi Praneeth Reddy Sadhu. All Rights Reserved.
+
+This repository, its source code, and associated materials are proprietary. Unauthorized copying, distribution, modification, or transmission of any part of this repository is strictly prohibited without prior written permission from the copyright owner. See the [LICENSE](LICENSE) file for complete details.
+
